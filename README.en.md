@@ -30,14 +30,12 @@
 
 ## Core Features
 
-- 🔐 **Dual-mode auth** — JWT self-contained / Redis Token stateful, switchable via config, with token renewal
-- 🛡️ **Fine-grained permissions** — RBAC at data / menu / button / API level; data scope supports ALL / dept & sub-depts / current dept / self / custom dept
-- ⚡ **Code generator** — one-click generation of full-stack CRUD code (codegen module)
+- 🔐 **Dual-mode auth** — JWT self-contained / Redis Token stateful, switchable, with token renewal
+- 🛡️ **Fine-grained permissions** — RBAC at data / menu / button / API level, with five data-scope tiers
+- ⚡ **Code generator** — one-click generation of full-stack CRUD code
 - 📦 **Complete modules** — users, roles, menus, departments, dictionaries, configs, files, notices, operation logs
-- 🌐 **Multi-language ecosystem** — shares the API specification and database schema with other language versions
+- 🌐 **Multi-language ecosystem** — shares the API spec and database schema with other language versions
 - 🔌 **Real-time communication** — SSE push: online user count, dictionary sync, notification broadcast
-- 📊 **Observability** — tracing structured logs + tower middleware recording request latency; utoipa auto-generates Swagger UI
-- 📁 **Excel handling** — calamine for reading + rust_xlsxwriter for writing, with import/export support
 
 ## System Preview
 
