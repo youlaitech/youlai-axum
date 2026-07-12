@@ -1,0 +1,18 @@
+[app]
+env = "dev"
+
+[database]
+max_connections = 5
+min_connections = 2
+
+[rate_limit]
+enabled = true
+limit = 1000
+window_seconds = 60
+strict_limit = 5
+strict_paths = "/api/v1/users/me"
+
+[file]
+storage_path = "./uploads"
+base_url = "/files"
+type = "local"

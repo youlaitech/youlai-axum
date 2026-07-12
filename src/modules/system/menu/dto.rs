@@ -1,0 +1,98 @@
+use serde::{Deserialize, Serialize};
+use validator::Validate;
+
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuCreate {
+    pub parent_id: i64,
+    #[validate(length(min = 1, max = 64))]
+    pub name: String,
+    #[validate(length(min = 1, max = 1))]
+    pub r#type: String,
+    pub route_name: Option<String>,
+    pub route_path: Option<String>,
+    pub component: Option<String>,
+    pub perm: Option<String>,
+    pub visible: Option<i16>,
+    pub sort: Option<i32>,
+    pub icon: Option<String>,
+    pub redirect: Option<String>,
+    pub keep_alive: Option<i16>,
+    pub always_show: Option<i16>,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuUpdate {
+    pub id: i64,
+    pub parent_id: i64,
+    #[validate(length(min = 1, max = 64))]
+    pub name: String,
+    pub r#type: String,
+    pub route_name: Option<String>,
+    pub route_path: Option<String>,
+    pub component: Option<String>,
+    pub perm: Option<String>,
+    pub visible: Option<i16>,
+    pub sort: Option<i32>,
+    pub icon: Option<String>,
+    pub redirect: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuVisibleQuery {
+    pub visible: i16,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuVO {
+    pub id: i64,
+    pub parent_id: i64,
+    pub name: String,
+    pub r#type: String,
+    pub route_name: Option<String>,
+    pub route_path: Option<String>,
+    pub component: Option<String>,
+    pub perm: Option<String>,
+    pub visible: Option<i16>,
+    pub sort: Option<i32>,
+    pub icon: Option<String>,
+    pub redirect: Option<String>,
+    pub keep_alive: Option<i16>,
+    pub always_show: Option<i16>,
+    pub children: Vec<MenuVO>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteVO {
+    pub path: String,
+    pub name: String,
+    pub component: Option<String>,
+    pub redirect: Option<String>,
+    pub meta: RouteMetaVO,
+    pub children: Vec<RouteVO>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteMetaVO {
+    pub title: String,
+    pub icon: Option<String>,
+    pub hidden: bool,
+    #[serde(rename = "alwaysShow")]
+    pub always_show: bool,
+    #[serde(rename = "keepAlive")]
+    pub keep_alive: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuOptionVO {
+    pub value: i64,
+    pub label: String,
+    pub parent_id: i64,
+    pub children: Vec<MenuOptionVO>,
+}

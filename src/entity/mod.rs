@@ -1,0 +1,16 @@
+pub mod sys_user;
+pub mod sys_role;
+pub mod sys_menu;
+pub mod sys_dept;
+pub mod sys_dict;
+pub mod sys_dict_item;
+pub mod sys_config;
+pub mod sys_notice;
+pub mod sys_user_notice;
+pub mod sys_log;
+pub mod sys_user_role;
+pub mod sys_role_menu;
+pub mod sys_role_dept;
+pub mod sys_user_social;
+pub mod gen_table;
+pub mod gen_table_column;
