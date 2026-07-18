@@ -1,8 +1,8 @@
 <div align="center">
 
-# <img alt="youlai-rust" width="28" src="./docs/images/logo/logo.png" align="center"> youlai-rust
+# <img alt="youlai-axum" width="28" src="./docs/images/logo/logo.png" valign="middle"> youlai-axum
 
-[English](./README.en.md) · [简体中文](./README.md)
+
 
 **Rust 企业级权限管理系统后端（Axum + SeaORM）**
 
@@ -11,8 +11,8 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7.x-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?logo=apache)](LICENSE)
-[![Gitee Star](https://gitee.com/youlaiorg/youlai-rust/badge/star.svg)](https://gitee.com/youlaiorg/youlai-rust/stargazers)
-[![GitHub Star](https://img.shields.io/github/stars/youlaitech/youlai-rust?style=social)](https://github.com/youlaitech/youlai-rust)
+[![Gitee Star](https://gitee.com/youlaiorg/youlai-axum/badge/star.svg)](https://gitee.com/youlaiorg/youlai-axum/stargazers)
+[![GitHub Star](https://img.shields.io/github/stars/youlaitech/youlai-axum?style=social)](https://github.com/youlaitech/youlai-axum)
 
 </div>
 
@@ -20,13 +20,16 @@
 
 <div align="center">
 
-[🖥️ 在线预览](https://vue.youlai.tech) | [📲 移动端预览](https://app.youlai.tech) | [📖 文档](https://www.youlai.tech/docs/server/spring-boot/)
+[![在线预览](https://img.shields.io/badge/在线预览-2D8CF0?style=for-the-badge&logo=google-chrome&logoColor=white)](https://vue.youlai.tech)
+[![移动端预览](https://img.shields.io/badge/移动端预览-19BE6B?style=for-the-badge&logo=android&logoColor=white)](https://app.youlai.tech)
+[![阅读文档](https://img.shields.io/badge/阅读文档-8B5CF6?style=for-the-badge&logo=gitbook&logoColor=white)](https://www.youlai.tech/docs/server/spring-boot/)
+[![English](https://img.shields.io/badge/English-00B4D8?style=for-the-badge&logo=google-translate&logoColor=white)](./README.en.md)
 
 </div>
 
-## 简介
+## 项目简介
 
-**youlai-rust** 是一套基于 Rust（Axum + SeaORM + PostgreSQL）的企业级权限管理系统后端，配套前端 [vue3-element-admin](https://gitee.com/youlaiorg/vue3-element-admin) 和移动端 [youlai-app](https://gitee.com/youlaiorg/youlai-app)，并提供 **7 种语言实现**（Java / Node.js / Go / Python / PHP / C# / Rust），共享同一套 API 规范与数据库结构。适用于追求高并发、低延迟的 Rust 技术栈团队学习与二次开发。
+**youlai-axum** 是一套基于 Rust（Axum + SeaORM + PostgreSQL）的企业级权限管理系统后端，配套前端 [vue3-element-admin](https://gitee.com/youlaiorg/vue3-element-admin) 和移动端 [youlai-app](https://gitee.com/youlaiorg/youlai-app)，并提供 **7 种语言实现**（Java / Node.js / Go / Python / PHP / C# / Rust），共享同一套 API 规范与数据库结构。适用于追求高并发、低延迟的 Rust 技术栈团队学习与二次开发。
 
 ## 核心特性
 
@@ -73,7 +76,7 @@
 
 > **Windows 用户**：Rust 默认使用 MSVC 工具链，需要 Visual Studio Build Tools 中的 C++ 工作负载。下载 [vs_buildtools.exe](https://aka.ms/vs/17/release/vs_buildtools.exe)，安装时勾选「使用 C++ 的桌面开发」，否则会遇到 `linker link.exe not found`。
 
-1. 克隆项目：`git clone https://github.com/youlaitech/youlai-rust.git`
+1. 克隆项目：`git clone https://github.com/youlaitech/youlai-axum.git`
 2. 导入数据库：`psql -U postgres -d youlai_admin -f ../youlai-boot-postgres/sql/youlai_admin.sql`
 3. 配置环境：`cp .env.example .env`
 4. 启动服务：`cargo run`，访问 http://localhost:8000/swagger-ui
@@ -82,25 +85,10 @@
 
 **Docker 部署**：`cd docker`，然后 `docker-compose up -d`
 
-## 技术栈
-
-| 技术 | 版本 | 说明 |
-|:-----|:-----|:-----|
-| Axum | 0.8 | Web 框架（Tokio 官方） |
-| SeaORM | 1.1 | 异步 ORM |
-| PostgreSQL | 16+ | 数据库 |
-| Redis | 7.x | 缓存与会话 |
-| JWT / Redis Token | — | 双模式认证 |
-| utoipa | 5.x | OpenAPI 文档 |
-| validator | 0.20 | 请求参数校验 |
-| tracing | 0.1 | 结构化日志 |
-| tower-governor | 0.6 | 限流 |
-| calamine / rust_xlsxwriter | — | Excel 读写 |
-
 ## 目录结构
 
 ```
-youlai-rust/
+youlai-axum/
 ├── config/                  # 配置文件
 │   ├── config.toml          # 主配置（兜底默认值）
 │   └── config-dev.toml      # 开发环境覆盖
@@ -154,30 +142,17 @@ youlai-rust/
 >
 > 七种后端共享同一套 **RESTful API 规范** 和 **数据库结构**，前端可无缝切换。
 
-## 文档资源
+## 交流合作
 
-| 资源 | 地址 |
-|:-----|:-----|
-| 📖 完整文档站 | [www.youlai.tech](https://www.youlai.tech/) |
-| 🖥️ PC 端在线预览 | [vue.youlai.tech](https://vue.youlai.tech) |
-| 📱 移动端在线预览 | [app.youlai.tech](https://app.youlai.tech) |
-| 🔗 Apifox 接口文档 | [apifox.com](https://www.apifox.cn/apidoc/shared-195e783f-4d85-4235-a038-eec696de4ea5) |
-| 🔗 本地接口文档 | [localhost:8000/swagger-ui](http://localhost:8000/swagger-ui) |
+欢迎在 [Issue](https://gitee.com/youlaiorg/youlai-axum/issues) 提交问题或反馈，也欢迎提交 Pull Request，支持与合作见[支持指南](https://www.youlai.tech/faq/help)。
+本项目基于 [Apache License 2.0](LICENSE) 开源，可免费用于商业项目。如需商务合作、二次开发、项目定制或部署支持，可联系作者微信（见下方二维码）。
 
-## 参与贡献
 
-欢迎提交 Issue 和 Pull Request！详见 [贡献指南](https://www.youlai.tech/faq/help)。
-
-## 开源协议
-
-本项目基于 [Apache License 2.0](LICENSE) 开源，可免费用于商业项目。
-
----
 
 <table align="center">
   <tr>
     <td align="center">
-      <img src="./docs/images/qrcode/wechat-official.png" height="180" alt="公众号「有来技术」"><br>
+      <img src="./docs/images/qrcode/wechat-official.jpg" height="180" alt="公众号「有来技术」"><br>
       <sub>公众号「有来技术」</sub>
     </td>
     <td>&nbsp;&nbsp;&nbsp;&nbsp;</td>
