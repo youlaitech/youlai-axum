@@ -1,5 +1,5 @@
 [app]
-name = "youlai-rust"
+name = "youlai-axum"
 env = "dev"
 
 [server]
@@ -15,7 +15,7 @@ min_connections = 5
 url = "redis://:123456@www.youlai.tech:6379/0"
 
 [security]
-ignore_urls = "/api/v1/auth/login/**,/api/v1/auth/captcha,/api/v1/auth/sms/code,/api/v1/auth/refresh-token,/api/v1/wxma/auth/**,/doc.html,/swagger-ui,/swagger-ui/*,/openapi.json"
+ignore_urls = "/api/v1/auth/login/**,/api/v1/auth/captcha,/api/v1/auth/sms/code,/api/v1/auth/refresh-token,/api/v1/auth/qr-code/generate,/api/v1/auth/qr-code/status,/api/v1/auth/qr-code/login,/api/v1/wxma/auth/**,/doc.html,/swagger-ui,/swagger-ui/*,/openapi.json"
 unsecured_urls = ""
 
 [security.session]
@@ -29,11 +29,23 @@ secret_key = "SecretKey012345678901234567890123456789012345678901234567890123456
 [security.session.redis_token]
 allow_multi_login = true
 
-[minio]
-endpoint = "http://localhost:9000"
-access_key = "minioadmin"
-secret_key = "minioadmin"
+[file]
+type = "minio"
+
+[file.upload]
+max_file_size_mb = 50
+allowed_extensions = "jpg,jpeg,png,gif"
+
+[file.minio]
+endpoint = "http://111.229.83.153:9000"
+access_key = "bybaddp7zyARpgNbEGKf"
+secret_key = "p9rBdQZPBIJcMH23iyFkZkXmmawbmwPlk3JLlaaj"
 bucket = "public"
+domain = ""
+
+[file.local]
+path = "./uploads"
+base_url = "/files"
 
 [mail]
 server = ""

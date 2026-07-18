@@ -1,0 +1,34 @@
+#![allow(dead_code)]
+/// 安全相关常量
+pub const ROLE_PREFIX: &str = "ROLE_";
+pub const ROOT_ROLE_CODE: &str = "ROOT";
+pub const MAX_PAGE_SIZE: i64 = 100;
+
+/// Token 类型标识
+pub mod token_type {
+    pub const ACCESS: &str = "access";
+    pub const REFRESH: &str = "refresh";
+}
+
+/// Redis Key 前缀
+pub mod redis_key {
+    pub const CAPTCHA: &str = "captcha:image";
+    pub const AUTH_TOKEN: &str = "auth:token";
+    pub const JWT_VERSION: &str = "auth:jwt:version";
+    pub const USER_SESSIONS: &str = "auth:user:sessions";
+    pub const SYS_CONFIG: &str = "sys:config";
+    /// 扫码登录票据 Key 前缀，完整 Key 为 `auth:qr_code:{ticket}`
+    pub const QR_CODE_PREFIX: &str = "auth:qr_code";
+}
+
+/// 手机/邮箱验证码 Redis Key 前缀（如 captcha:mobile:138...）
+pub const MOBILE_CODE: &str = "captcha:mobile";
+pub const EMAIL_CODE: &str = "captcha:email";
+/// 验证码有效期（秒）
+pub const CODE_TTL: u64 = 300;
+
+/// 验证码配置：4 位字符，有效期 300 秒
+pub const CAPTCHA_LENGTH: usize = 4;
+pub const CAPTCHA_TTL: u64 = 300;
+/// 新建用户 / 重置密码时使用的默认密码
+pub const DEFAULT_PASSWORD: &str = "123456";

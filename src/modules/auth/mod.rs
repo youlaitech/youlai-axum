@@ -1,14 +1,25 @@
 use validator::Validate;
+pub mod captcha;
 pub mod dto;
+pub mod extractor;
+pub mod middleware;
+pub mod permission;
+pub mod principal;
+pub mod qrcode;
 pub mod service;
+pub mod token;
 pub mod wxma;
 
-use axum::{extract::State, routing::{get, post, delete}, Json, Router};
-use crate::core::state::AppState;
-use crate::framework::web::error::AppResult;
-use crate::framework::web::response::Result;
+use crate::error::AppResult;
 use crate::modules::auth::dto::*;
 use crate::modules::auth::service::AuthService;
+use crate::response::Result;
+use crate::state::AppState;
+use axum::{
+    extract::State,
+    routing::{delete, get, post},
+    Json, Router,
+};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -19,11 +30,12 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/auth/logout", delete(logout))
         .route("/api/v1/auth/refresh-token", post(refresh_token))
         .merge(wxma::routes())
+        .merge(qrcode::routes())
 }
 
 /// 获取图形验证码
 async fn get_captcha(State(state): State<AppState>) -> AppResult<Json<Result<CaptchaResp>>> {
-    let captcha = crate::framework::captcha::service::generate(&state.redis).await?;
+    let captcha = crate::modules::auth::captcha::generate(&state.redis).await?;
     Ok(Json(Result::success(CaptchaResp {
         captcha_id: captcha.captcha_id,
         captcha_base64: captcha.captcha_base64,
@@ -31,20 +43,35 @@ async fn get_captcha(State(state): State<AppState>) -> AppResult<Json<Result<Cap
 }
 
 /// 用户名密码登录
-async fn login(State(state): State<AppState>, Json(req): Json<LoginRequest>) -> AppResult<Json<Result<LoginResp>>> {
+async fn login(
+    State(state): State<AppState>,
+    Json(req): Json<LoginRequest>,
+) -> AppResult<Json<Result<LoginResp>>> {
     req.validate()?;
-    let result = AuthService::new(&state.db, &state.redis, &state.token_manager).login(&req).await?;
+    let result = AuthService::new(&state.db, &state.redis, &state.token_manager)
+        .login(&req)
+        .await?;
     Ok(Json(Result::success(result)))
 }
 
-async fn login_by_sms(State(state): State<AppState>, Json(req): Json<SmsLoginRequest>) -> AppResult<Json<Result<LoginResp>>> {
+async fn login_by_sms(
+    State(state): State<AppState>,
+    Json(req): Json<SmsLoginRequest>,
+) -> AppResult<Json<Result<LoginResp>>> {
     req.validate()?;
-    let result = AuthService::new(&state.db, &state.redis, &state.token_manager).login_by_sms(&req).await?;
+    let result = AuthService::new(&state.db, &state.redis, &state.token_manager)
+        .login_by_sms(&req)
+        .await?;
     Ok(Json(Result::success(result)))
 }
 
-async fn send_sms_code(State(state): State<AppState>, Json(req): Json<SendSmsRequest>) -> AppResult<Json<Result<()>>> {
-    AuthService::new(&state.db, &state.redis, &state.token_manager).send_sms_code(&req).await?;
+async fn send_sms_code(
+    State(state): State<AppState>,
+    Json(req): Json<SendSmsRequest>,
+) -> AppResult<Json<Result<()>>> {
+    AuthService::new(&state.db, &state.redis, &state.token_manager)
+        .send_sms_code(&req)
+        .await?;
     Ok(Json(Result::success_empty()))
 }
 
@@ -54,7 +81,12 @@ async fn logout() -> AppResult<Json<Result<()>>> {
 }
 
 /// 刷新访问令牌
-async fn refresh_token(State(state): State<AppState>, Json(req): Json<RefreshTokenRequest>) -> AppResult<Json<Result<LoginResp>>> {
-    let result = AuthService::new(&state.db, &state.redis, &state.token_manager).refresh_token(&req).await?;
+async fn refresh_token(
+    State(state): State<AppState>,
+    Json(req): Json<RefreshTokenRequest>,
+) -> AppResult<Json<Result<LoginResp>>> {
+    let result = AuthService::new(&state.db, &state.redis, &state.token_manager)
+        .refresh_token(&req)
+        .await?;
     Ok(Json(Result::success(result)))
 }
