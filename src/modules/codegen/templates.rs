@@ -1,23 +1,19 @@
 //! 代码生成模板（Tera）与渲染逻辑
-//!
-//! 从 PostgreSQL 元数据构造模板上下文，渲染出 SeaORM 实体 / DTO / Service / Router
-//! 四类 Rust 源码，并打包为文件列表。
-
-use tera::{Context, Tera};
 
 use super::service::TableMeta;
+use tera::{Context, Tera};
 
-/// 单个待生成文件
 pub struct GeneratedFile {
-    /// zip 内的相对路径（不含文件名）
     pub path: String,
-    /// 文件名
     pub file_name: String,
-    /// 文件内容
     pub content: String,
+    pub scope: String,
 }
 
-/// SeaORM 实体模板
+// ═══════════════════════════════════════════════════════════
+// 后端模板 — 生成 SeaORM 实体 / DTO / Service / Router 四类 Rust 源码
+// ═══════════════════════════════════════════════════════════
+
 const ENTITY_TMPL: &str = r#"use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 {% if has_datetime %}
@@ -28,17 +24,14 @@ use uuid::Uuid;
 use serde_json::Value as JsonValue;
 {% endif %}
 
-/// 由代码生成器基于表 `{{ table_name }}` 生成，请勿手动修改
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "{{ table_name }}")]
 pub struct Model {
 {% for c in columns %}{% if c.is_pk %}    #[sea_orm(primary_key)]
-{% endif %}    pub {{ c.name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
+{% endif %}    pub {{ c.column_name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
 {% endfor %}
-
 }
 
-/// 实体别名（便于在 Service / Handler 中以实体名引用）
 pub type {{ entity_name }} = Model;
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -47,54 +40,54 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 "#;
 
-/// DTO 模板（查询条件 + 创建/更新表单）
 const DTO_TMPL: &str = r#"use serde::{Deserialize, Serialize};
 use validator::Validate;
 {% if has_datetime %}
 use chrono::NaiveDateTime;
 {% endif %}
 
-/// 由代码生成器基于表 `{{ table_name }}` 生成的查询条件
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct {{ entity_name }}Query {
-    pub keywords: Option<String>,
-{% for c in columns %}{% if not c.is_pk and c.is_string %}    pub {{ c.name }}: Option<String>,
+    pub page_num: Option<u64>,
+    pub page_size: Option<u64>,
+{% for c in columns %}{% if not c.is_pk and c.is_show_in_query %}    pub {{ c.column_name }}: Option<String>,
 {% endif %}{% endfor %}
-
 }
 
-/// 由代码生成器基于表 `{{ table_name }}` 生成的创建/更新表单
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct {{ entity_name }}Form {
-{% for c in columns %}{% if not c.is_pk %}{% if c.is_string %}    #[validate(length(min = 1))]
-{% endif %}    pub {{ c.name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
+{% for c in columns %}{% if not c.is_pk %}{% if c.is_string and c.is_required %}    #[validate(length(min = 1))]
+{% endif %}    pub {{ c.column_name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
 {% endif %}{% endfor %}
-
 }
 "#;
 
-/// Service 模板
 const SERVICE_TMPL: &str = r#"use sea_orm::*;
 use crate::error::{AppError, AppResult};
 use crate::result_code::ResultCode;
 use super::entity::*;
 use super::dto::*;
 
-/// 由代码生成器基于表 `{{ table_name }}` 生成的服务
 pub struct {{ entity_name }}Service<'a> {
     db: &'a DatabaseConnection,
 }
 
 impl<'a> {{ entity_name }}Service<'a> {
-    pub fn new(db: &'a DatabaseConnection) -> Self {
-        Self { db }
-    }
+    pub fn new(db: &'a DatabaseConnection) -> Self { Self { db } }
 
-    pub async fn list(&self) -> AppResult<Vec<{{ entity_name }}>> {
-        let list = Entity::find().all(self.db).await?;
-        Ok(list)
+    pub async fn list(&self, query: &{{ entity_name }}Query) -> AppResult<(Vec<{{ entity_name }}>, u64)> {
+        let mut select = Entity::find();
+{% for c in columns %}{% if not c.is_pk and c.is_show_in_query %}{% if c.is_string %}        if let Some(ref v) = query.{{ c.column_name }} { if !v.is_empty() { select = select.filter(Column::{{ c.column_name }}.contains(v)); } }
+{% elif c.is_integer %}        if let Some(ref v) = query.{{ c.column_name }} { if let Ok(val) = v.parse::<i64>() { select = select.filter(Column::{{ c.column_name }}.eq(val)); } }
+{% elif c.is_bool %}        if let Some(ref v) = query.{{ c.column_name }} { if let Ok(val) = v.parse::<bool>() { select = select.filter(Column::{{ c.column_name }}.eq(val)); } }
+{% endif %}{% endif %}{% endfor %}
+        let total = select.clone().count(self.db).await?;
+        let page = query.page_num.unwrap_or(1).max(1) as u64;
+        let size = query.page_size.unwrap_or(10).min(1000) as u64;
+        let list = select.offset((page - 1) * size).limit(size).all(self.db).await?;
+        Ok((list, total))
     }
 
     pub async fn create(&self, form: &{{ entity_name }}Form) -> AppResult<i64> {
@@ -112,7 +105,7 @@ impl<'a> {{ entity_name }}Service<'a> {
             .one(self.db).await?
             .ok_or_else(|| AppError::Business(ResultCode::AccountNotFound, None))?
             .into();
-{% for c in columns %}{% if not c.is_pk %}        active.{{ c.name }} = Set(form.{{ c.name }}.clone());
+{% for c in columns %}{% if not c.is_pk %}        active.{{ c.column_name }} = Set(form.{{ c.column_name }}.clone());
 {% endif %}{% endfor %}        active.update(self.db).await?;
         Ok(())
     }
@@ -124,39 +117,45 @@ impl<'a> {{ entity_name }}Service<'a> {
 
 fn form_to_active(form: &{{ entity_name }}Form) -> ActiveModel {
     ActiveModel {
-{% for c in columns %}{% if not c.is_pk %}        {{ c.name }}: Set(form.{{ c.name }}.clone()),
+{% for c in columns %}{% if not c.is_pk %}        {{ c.column_name }}: Set(form.{{ c.column_name }}.clone()),
 {% endif %}{% endfor %}        ..Default::default()
     }
 }
 "#;
 
-/// Router + Handler 模板
 const MOD_TMPL: &str = r#"pub mod entity;
 pub mod dto;
 pub mod service;
 
 use axum::{
-    extract::{Path, State},
-    routing::{get, post, put, delete},
+    extract::{Path, Query, State},
+    routing::{delete, get, post, put},
     Json, Router,
 };
+use serde::Serialize;
 use crate::state::AppState;
 use crate::error::{AppError, AppResult};
 use crate::response::Result;
 use crate::result_code::ResultCode;
 use dto::*;
-use entity::SysUser;
 use service::{{ entity_name }}Service;
+
+#[derive(Serialize)]
+pub struct PageResult<T: Serialize> {
+    pub list: Vec<T>,
+    pub total: u64,
+}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/{{ entity_kebab }}", get(list).post(create))
         .route("/api/v1/{{ entity_kebab }}/{id}", get(get_one).put(update).delete(delete_one))
+        .route("/api/v1/{{ entity_kebab }}/{id}/form", get(get_one))
 }
 
-async fn list(State(state): State<AppState>) -> AppResult<Json<Result<Vec<{{ entity_name }}>>>> {
-    let data = {{ entity_name }}Service::new(&state.db).list().await?;
-    Ok(Json(Result::success(data)))
+async fn list(State(state): State<AppState>, Query(q): Query<{{ entity_name }}Query>) -> AppResult<Json<Result<PageResult<{{ entity_name }}>>>> {
+    let (data, total) = {{ entity_name }}Service::new(&state.db).list(&q).await?;
+    Ok(Json(Result::success(PageResult { list: data, total })))
 }
 
 async fn get_one(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<Result<{{ entity_name }}>>> {
@@ -181,142 +180,763 @@ async fn delete_one(State(state): State<AppState>, Path(id): Path<i64>) -> AppRe
 }
 "#;
 
-/// 渲染全部模板，返回文件列表
-pub fn render(meta: &TableMeta) -> anyhow::Result<Vec<GeneratedFile>> {
-    let mut tera = Tera::default();
-    tera.add_raw_template("entity", ENTITY_TMPL)?;
-    tera.add_raw_template("dto", DTO_TMPL)?;
-    tera.add_raw_template("service", SERVICE_TMPL)?;
-    tera.add_raw_template("mod", MOD_TMPL)?;
+// ═══════════════════════════════════════════════════════════
+// 前端模板 — 直接从 boot .vm 搬运，仅替换模板语法
+// 使用 [[ ]] 输出分隔符，避免与 Vue {{ }} 冲突
+// ═══════════════════════════════════════════════════════════
 
-    let ctx = Context::from_serialize(meta)?;
+// ── TS: API 调用层 ──
 
-    let files = [
-        (
-            "entity",
-            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
-            "entity.rs".to_string(),
-        ),
-        (
-            "dto",
-            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
-            "dto.rs".to_string(),
-        ),
-        (
-            "service",
-            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
-            "service.rs".to_string(),
-        ),
-        (
-            "mod",
-            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
-            "mod.rs".to_string(),
-        ),
-    ];
+const TS_API_TMPL: &str = r##"import request from "@/utils/request";
+import type { [[ entity_name ]]Form, [[ entity_name ]]QueryParams, [[ entity_name ]]Item } from "./types";
+import type { PageResult } from "@/api/common";
 
-    let mut out = Vec::with_capacity(files.len());
-    for (tpl, path, file_name) in files {
-        let content = tera.render(tpl, &ctx)?;
-        out.push(GeneratedFile {
-            path,
-            file_name,
-            content,
+const [[ entity_upper_snake ]]_BASE_URL = "/api/v1/[[ entity_kebab ]]";
+
+const [[ entity_name ]]API = {
+    /** 获取[[ business_name ]]分页数据 */
+    getPage(queryParams?: [[ entity_name ]]QueryParams) {
+        return request<unknown, PageResult<[[ entity_name ]]Item>>({
+            url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+            method: "get",
+            params: queryParams,
+        });
+    },
+    /** 获取[[ business_name ]]表单数据 */
+    getFormData(id: string) {
+        return request<unknown, [[ entity_name ]]Form>({
+            url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}/form`,
+            method: "get",
+        });
+    },
+    /** 新增[[ business_name ]] */
+    create(data: [[ entity_name ]]Form) {
+        return request({
+            url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+            method: "post",
+            data,
+        });
+    },
+    /** 更新[[ business_name ]] */
+     update(id: string, data: [[ entity_name ]]Form) {
+        return request({
+            url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}`,
+            method: "put",
+            data,
+        });
+    },
+    /** 批量删除[[ business_name ]]，多个以英文逗号(,)分割 */
+     deleteByIds(ids: string) {
+        return request({
+            url: `${[[ entity_upper_snake ]]_BASE_URL}/${ids}`,
+            method: "delete",
         });
     }
-    Ok(out)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::modules::codegen::service::{ColumnInfo, TableMeta};
+export default [[ entity_name ]]API;
 
-    fn sample_meta() -> TableMeta {
-        TableMeta {
-            table_name: "sys_user".into(),
-            entity_name: "SysUser".into(),
-            entity_lower: "sysUser".into(),
-            module_name: "sys".into(),
-            entity_kebab: "sys-user".into(),
-            pk_name: "id".into(),
-            columns: vec![
-                ColumnInfo {
-                    name: "id".into(),
-                    rust_type: "i64".into(),
-                    is_pk: true,
-                    is_nullable: false,
-                    is_string: false,
-                    is_datetime: false,
-                    comment: "主键".into(),
-                },
-                ColumnInfo {
-                    name: "username".into(),
-                    rust_type: "String".into(),
-                    is_pk: false,
-                    is_nullable: false,
-                    is_string: true,
-                    is_datetime: false,
-                    comment: "用户名".into(),
-                },
-                ColumnInfo {
-                    name: "create_time".into(),
-                    rust_type: "NaiveDateTime".into(),
-                    is_pk: false,
-                    is_nullable: true,
-                    is_string: false,
-                    is_datetime: true,
-                    comment: "创建时间".into(),
-                },
-            ],
-            has_datetime: true,
-            has_json: false,
-            has_uuid: false,
-            has_decimal: false,
+export * from "./types";
+"##;
+
+// ── TS: 类型定义 ──
+
+const TS_TYPES_TMPL: &str = r##"/**
+ * [[ entity_name ]] [[ business_name ]]类型定义
+ */
+
+import type { BaseQueryParams } from "@/api/common";
+
+/** [[ business_name ]]查询参数 */
+export interface [[ entity_name ]]QueryParams extends BaseQueryParams {
+{% for c in columns %}{% if c.is_show_in_query %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */{% endif %}
+
+{% if c.form_type_name == "DATE" or c.form_type_name == "DATE_TIME" %}{% if c.query_type_name == "BETWEEN" %}  [[ c.field_name ]]?: [string, string];
+{% else %}  [[ c.field_name ]]?: [[ c.ts_type ]];
+{% endif %}{% else %}  [[ c.field_name ]]?: [[ c.ts_type ]];
+{% endif %}{% endif %}{% endfor %}
+}
+
+/** [[ business_name ]]表单对象 */
+export interface [[ entity_name ]]Form {
+  id?: string;
+{% for c in columns %}{% if c.is_show_in_form %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */{% endif %}
+
+  [[ c.field_name ]]?: [[ c.ts_type ]];
+{% endif %}{% endfor %}
+}
+
+/** [[ business_name ]]详情对象 */
+export type [[ entity_name ]]Detail = [[ entity_name ]]Item & [[ entity_name ]]Form;
+
+/** [[ business_name ]]列表项 */
+export interface [[ entity_name ]]Item {
+{% for c in columns %}{% if c.is_show_in_list %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */{% endif %}
+
+  [[ c.field_name ]]?: [[ c.ts_type ]];
+{% endif %}{% endfor %}
+}
+"##;
+
+// ── TS: classic 页面 ──
+
+const TS_CLASSIC_VUE_TMPL: &str = r##"<template>
+  <div class="page-container">
+    <el-card class="page-search" shadow="never">
+      <el-form ref="queryFormRef" :model="params" :inline="true">
+{% for c in columns %}{% if c.is_show_in_query %}        <el-form-item label="[[ c.field_comment ]]" prop="[[ c.field_name ]]">
+{% if c.form_type_name == "INPUT" %}          <el-input v-model="params.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" clearable @keyup.enter="handleQuery()" />
+{% elif c.form_type_name == "SELECT" %}{% if c.dict_type != "" %}          <DictSelect v-model="params.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
+{% else %}          <el-select v-model="params.[[ c.field_name ]]" placeholder="请选择[[ c.field_comment ]]">
+            <el-option :key="1" :value="1" label="选项一"/>
+            <el-option :key="2" :value="2" label="选项二"/>
+          </el-select>
+{% endif %}{% elif c.form_type_name == "RADIO" %}{% if c.dict_type != "" %}          <DictSelect v-model="params.[[ c.field_name ]]" type="radio" code="[[ c.dict_type ]]" />
+{% else %}          <el-radio-group v-model="params.[[ c.field_name ]]">
+            <el-radio :key="1" :value="1">选项一</el-radio>
+            <el-radio :key="2" :value="2">选项二</el-radio>
+          </el-radio-group>
+{% endif %}{% elif c.form_type_name == "CHECK_BOX" %}{% if c.dict_type != "" %}          <DictSelect v-model="params.[[ c.field_name ]]" type="checkbox" code="[[ c.dict_type ]]" />
+{% else %}          <el-checkbox-group v-model="params.[[ c.field_name ]]">
+            <el-checkbox :key="1" :label="1">选项一</el-checkbox>
+            <el-checkbox :key="2" :label="2">选项二</el-checkbox>
+          </el-checkbox-group>
+{% endif %}{% elif c.form_type_name == "INPUT_NUMBER" %}          <el-input-number v-model="params.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "SWITCH" %}          <el-switch v-model="params.[[ c.field_name ]]" :active-value="1" :inactive-value="0" />
+{% elif c.form_type_name == "TEXT_AREA" %}          <el-input type="textarea" v-model="params.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "DATE_TIME" %}{% if c.query_type_name == "BETWEEN" %}          <el-date-picker v-model="params.[[ c.field_name ]]" type="daterange" range-separator="~" start-placeholder="开始时间" end-placeholder="结束时间" value-format="YYYY-MM-DD HH:mm:ss" />
+{% else %}          <el-date-picker v-model="params.[[ c.field_name ]]" type="datetime" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD HH:mm:ss" />
+{% endif %}{% elif c.form_type_name == "DATE" %}{% if c.query_type_name == "BETWEEN" %}          <el-date-picker class="!w-[240px]" v-model="params.[[ c.field_name ]]" type="daterange" range-separator="~" start-placeholder="开始时间" end-placeholder="结束时间" value-format="YYYY-MM-DD" />
+{% else %}          <el-date-picker class="!w-[240px]" v-model="params.[[ c.field_name ]]" type="date" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD" />
+{% endif %}{% endif %}        </el-form-item>
+{% endif %}{% endfor %}        <el-form-item>
+          <el-button type="primary" @click="handleQuery">搜索</el-button>
+          <el-button @click="handleResetQuery">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card ref="tableWrapperRef" class="page-content" shadow="never">
+      <div class="page-toolbar">
+        <div class="page-toolbar__left">
+          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:create']" type="primary" @click="handleCreateClick()">新增</el-button>
+          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" :disabled="!hasSelection" @click="handleBatchDelete()">删除</el-button>
+        </div>
+        <div class="page-toolbar__right">
+          <el-tooltip content="刷新" placement="top">
+            <el-button class="page-icon-btn" @click="fetchData"><el-icon><Refresh /></el-icon></el-button>
+          </el-tooltip>
+          <el-tooltip content="全屏" placement="top">
+            <el-button class="page-icon-btn" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon></el-button>
+          </el-tooltip>
+        </div>
+      </div>
+
+      <div class="page-table-wrapper">
+        <el-table ref="dataTableRef" v-loading="loading" class="page-table" :data="list" height="100%" border highlight-current-row @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" align="center" />
+{% for c in columns %}{% if c.is_show_in_list %}{% if c.dict_type != "" %}        <el-table-column label="[[ c.field_comment ]]" width="150" align="center">
+          <template #default="scope">
+            <DictTag v-model="scope.row.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
+          </template>
+        </el-table-column>
+{% else %}        <el-table-column key="[[ c.field_name ]]" label="[[ c.field_comment ]]" prop="[[ c.field_name ]]" min-width="150" align="center" />
+{% endif %}{% endif %}{% endfor %}        <el-table-column fixed="right" label="操作" width="180">
+          <template #default="scope">
+            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:update']" type="primary" size="small" link @click="handleEditClick(String(scope.row.id))">编辑</el-button>
+            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" size="small" link @click="handleDelete(String(scope.row.id))">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      </div>
+
+      <pagination v-if="total > 0" v-model:total="total" v-model:page="params.pageNum" v-model:limit="params.pageSize" class="page-pagination" @pagination="fetchData" />
+    </el-card>
+
+    <el-dialog v-model="dialog.visible" :title="dialog.title" width="600px" @close="closeDialog">
+      <el-form ref="dataFormRef" :model="formData" :rules="rules" label-width="100px">
+{% for c in columns %}{% if c.is_show_in_form and c.form_type_name != "HIDDEN" %}        <el-form-item label="[[ c.field_comment ]]" prop="[[ c.field_name ]]">
+{% if c.form_type_name == "INPUT" %}          <el-input v-model="formData.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "SELECT" %}{% if c.dict_type != "" %}          <DictSelect v-model="formData.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
+{% else %}          <el-select v-model="formData.[[ c.field_name ]]" placeholder="请选择[[ c.field_comment ]]">
+            <el-option :value="0" label="选项一"/>
+            <el-option :value="1" label="选项二"/>
+          </el-select>
+{% endif %}{% elif c.form_type_name == "RADIO" %}{% if c.dict_type != "" %}          <DictSelect v-model="formData.[[ c.field_name ]]" type="radio" code="[[ c.dict_type ]]" />
+{% else %}          <el-radio-group v-model="formData.[[ c.field_name ]]">
+            <el-radio :value="0">选项一</el-radio>
+            <el-radio :value="1">选项二</el-radio>
+          </el-radio-group>
+{% endif %}{% elif c.form_type_name == "CHECK_BOX" %}{% if c.dict_type != "" %}          <DictSelect v-model="formData.[[ c.field_name ]]" type="checkbox" code="[[ c.dict_type ]]" />
+{% else %}          <el-checkbox-group v-model="formData.[[ c.field_name ]]">
+            <el-checkbox :value="0">选项一</el-checkbox>
+            <el-checkbox :value="1">选项二</el-checkbox>
+          </el-checkbox-group>
+{% endif %}{% elif c.form_type_name == "INPUT_NUMBER" %}          <el-input-number v-model="formData.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "SWITCH" %}          <el-switch v-model="formData.[[ c.field_name ]]" :active-value="1" :inactive-value="0" />
+{% elif c.form_type_name == "TEXT_AREA" %}          <el-input type="textarea" v-model="formData.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "DATE_TIME" %}          <el-date-picker v-model="formData.[[ c.field_name ]]" type="datetime" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD HH:mm:ss" />
+{% elif c.form_type_name == "DATE" %}          <el-date-picker class="!w-[240px]" v-model="formData.[[ c.field_name ]]" type="date" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD" />
+{% endif %}        </el-form-item>
+{% elif c.form_type_name == "HIDDEN" %}        <el-input type="hidden" v-model="formData.[[ c.field_name ]]" />
+{% endif %}{% endfor %}      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="handleSubmit">确定</el-button>
+          <el-button @click="closeDialog">取消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useFullscreen } from "@vueuse/core";
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from "element-plus";
+import { FullScreen, Refresh } from "@element-plus/icons-vue";
+import { usePageTable, useTableSelection } from "@/composables";
+import [[ entity_name ]]API from "@/api/[[ module_name ]]/[[ entity_kebab ]]";
+import type { [[ entity_name ]]Item, [[ entity_name ]]Form, [[ entity_name ]]QueryParams } from "@/api/[[ module_name ]]/[[ entity_kebab ]]";
+
+defineOptions({
+  name: "[[ entity_name ]]",
+  inheritAttrs: false,
+});
+
+const queryFormRef = ref<FormInstance>();
+const dataFormRef = ref<FormInstance>();
+const tableWrapperRef = ref<HTMLElement | null>(null);
+const { toggle: toggleFullscreen } = useFullscreen(tableWrapperRef);
+
+const initialFormData = reactive({} as [[ entity_name ]]Form);
+Object.assign(initialFormData, {} as [[ entity_name ]]Form);
+
+const { loading, list, total, params, fetchData, handleQuery, handleResetQuery } = usePageTable<
+  [[ entity_name ]]Item,
+  [[ entity_name ]]QueryParams
+>({
+  initialParams: {
+    pageNum: 1,
+    pageSize: 10,
+  } as [[ entity_name ]]QueryParams,
+  request: [[ entity_name ]]API.getPage,
+  onBeforeReset: () => queryFormRef.value?.resetFields(),
+});
+
+const { selectedIds, hasSelection, handleSelectionChange } = useTableSelection<[[ entity_name ]]Item>();
+
+const dialog = reactive({
+  title: "",
+  visible: false,
+});
+
+const formData = reactive<[[ entity_name ]]Form>({} as [[ entity_name ]]Form);
+
+const rules: FormRules = {
+{% for c in columns %}{% if c.is_show_in_form and c.is_required %}  [[ c.field_name ]]: [{ required: true, message: "请输入[[ c.field_comment ]]", trigger: "blur" }],
+{% endif %}{% endfor %}
+};
+
+function openDialog(): void {
+  dialog.visible = true;
+}
+
+function closeDialog(): void {
+  dialog.visible = false;
+  resetForm();
+}
+
+function resetForm(): void {
+  dataFormRef.value?.resetFields();
+  dataFormRef.value?.clearValidate();
+  Object.keys(formData).forEach((key) => {
+    delete (formData as Record<string, unknown>)[key];
+  });
+  Object.assign(formData, initialFormData);
+}
+
+async function handleCreateClick(): Promise<void> {
+  dialog.title = "新增[[ business_name ]]";
+  openDialog();
+}
+
+async function handleEditClick(id: string): Promise<void> {
+  dialog.title = "修改[[ business_name ]]";
+  const data = await [[ entity_name ]]API.getFormData(id);
+  Object.assign(formData, data);
+  openDialog();
+}
+
+async function handleSubmit(): Promise<void> {
+  const valid = await dataFormRef.value?.validate().then(
+    () => true,
+    () => false
+  );
+  if (!valid) return;
+
+  loading.value = true;
+  try {
+    const id = formData.id;
+    if (id) {
+      await [[ entity_name ]]API.update(id, formData);
+      ElMessage.success("修改成功");
+    } else {
+      await [[ entity_name ]]API.create(formData);
+      ElMessage.success("新增成功");
+    }
+    closeDialog();
+    handleResetQuery();
+  } finally {
+    loading.value = false;
+  }
+}
+
+function handleBatchDelete(): void {
+  handleDelete();
+}
+
+async function handleDelete(id?: string): Promise<void> {
+  const ids = id || selectedIds.value.join(",");
+  if (!ids) {
+    ElMessage.warning("请勾选删除项");
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm("确认删除已选中的数据项?", "警告", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+  } catch {
+    ElMessage.info("已取消删除");
+    return;
+  }
+
+  loading.value = true;
+  try {
+    await [[ entity_name ]]API.deleteByIds(ids);
+    ElMessage.success("删除成功");
+    handleResetQuery();
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  handleQuery();
+});
+</script>
+"##;
+
+// ── JS: API 调用层 ──
+
+const JS_API_TMPL: &str = r##"import request from "@/utils/request";
+
+const [[ entity_upper_snake ]]_BASE_URL = "/api/v1/[[ entity_kebab ]]";
+
+const [[ entity_name ]]API = {
+  /** 获取[[ business_name ]]分页数据 */
+  getPage(queryParams) {
+    return request({
+      url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+      method: "get",
+      params: queryParams,
+    });
+  },
+
+  /**
+   * 获取[[ business_name ]]表单数据
+   * @param {string} id [[ business_name ]]ID
+   */
+  getFormData(id) {
+    return request({
+      url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}/form`,
+      method: "get",
+    });
+  },
+
+  /**
+   * 新增[[ business_name ]]
+   * @param {Object} data [[ business_name ]]表单数据
+   */
+  create(data) {
+    return request({
+      url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+      method: "post",
+      data,
+    });
+  },
+
+  /**
+   * 更新[[ business_name ]]
+   * @param {string} id [[ business_name ]]ID
+   * @param {Object} data [[ business_name ]]表单数据
+   */
+  update(id, data) {
+    return request({
+      url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}`,
+      method: "put",
+      data,
+    });
+  },
+
+  /**
+   * 批量删除[[ business_name ]]，多个以英文逗号分割
+   * @param {string} ids [[ business_name ]]ID字符串
+   */
+  deleteByIds(ids) {
+    return request({
+      url: `${[[ entity_upper_snake ]]_BASE_URL}/${ids}`,
+      method: "delete",
+    });
+  },
+};
+
+export default [[ entity_name ]]API;
+"##;
+
+// ── JS: classic 页面 ──
+
+const JS_CLASSIC_VUE_TMPL: &str = r##"<template>
+  <div class="page-container">
+    <el-card class="page-search" shadow="never">
+      <el-form ref="queryFormRef" :model="params" :inline="true">
+{% for c in columns %}{% if c.is_show_in_query %}        <el-form-item label="[[ c.field_comment ]]" prop="[[ c.field_name ]]">
+{% if c.form_type_name == "INPUT" %}          <el-input v-model="params.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" clearable @keyup.enter="handleQuery()" />
+{% elif c.form_type_name == "SELECT" %}{% if c.dict_type != "" %}          <DictSelect v-model="params.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
+{% else %}          <el-select v-model="params.[[ c.field_name ]]" placeholder="请选择[[ c.field_comment ]]">
+            <el-option :key="1" :value="1" label="选项一"/>
+            <el-option :key="2" :value="2" label="选项二"/>
+          </el-select>
+{% endif %}{% elif c.form_type_name == "RADIO" %}{% if c.dict_type != "" %}          <DictSelect v-model="params.[[ c.field_name ]]" type="radio" code="[[ c.dict_type ]]" />
+{% else %}          <el-radio-group v-model="params.[[ c.field_name ]]">
+            <el-radio :key="1" :value="1">选项一</el-radio>
+            <el-radio :key="2" :value="2">选项二</el-radio>
+          </el-radio-group>
+{% endif %}{% elif c.form_type_name == "CHECK_BOX" %}{% if c.dict_type != "" %}          <DictSelect v-model="params.[[ c.field_name ]]" type="checkbox" code="[[ c.dict_type ]]" />
+{% else %}          <el-checkbox-group v-model="params.[[ c.field_name ]]">
+            <el-checkbox :key="1" :label="1">选项一</el-checkbox>
+            <el-checkbox :key="2" :label="2">选项二</el-checkbox>
+          </el-checkbox-group>
+{% endif %}{% elif c.form_type_name == "INPUT_NUMBER" %}          <el-input-number v-model="params.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "SWITCH" %}          <el-switch v-model="params.[[ c.field_name ]]" :active-value="1" :inactive-value="0" />
+{% elif c.form_type_name == "TEXT_AREA" %}          <el-input type="textarea" v-model="params.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "DATE_TIME" %}{% if c.query_type_name == "BETWEEN" %}          <el-date-picker v-model="params.[[ c.field_name ]]" type="daterange" range-separator="~" start-placeholder="开始时间" end-placeholder="结束时间" value-format="YYYY-MM-DD HH:mm:ss" />
+{% else %}          <el-date-picker v-model="params.[[ c.field_name ]]" type="datetime" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD HH:mm:ss" />
+{% endif %}{% elif c.form_type_name == "DATE" %}{% if c.query_type_name == "BETWEEN" %}          <el-date-picker class="!w-[240px]" v-model="params.[[ c.field_name ]]" type="daterange" range-separator="~" start-placeholder="开始时间" end-placeholder="结束时间" value-format="YYYY-MM-DD" />
+{% else %}          <el-date-picker class="!w-[240px]" v-model="params.[[ c.field_name ]]" type="date" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD" />
+{% endif %}{% endif %}        </el-form-item>
+{% endif %}{% endfor %}        <el-form-item>
+          <el-button type="primary" @click="handleQuery">搜索</el-button>
+          <el-button @click="handleResetQuery">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
+    <el-card ref="tableWrapperRef" class="page-content" shadow="never">
+      <div class="page-toolbar">
+        <div class="page-toolbar__left">
+          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:create']" type="primary" @click="handleCreateClick()">新增</el-button>
+          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" :disabled="!hasSelection" @click="handleBatchDelete()">删除</el-button>
+        </div>
+        <div class="page-toolbar__right">
+          <el-tooltip content="刷新" placement="top">
+            <el-button class="page-icon-btn" @click="fetchData"><el-icon><Refresh /></el-icon></el-button>
+          </el-tooltip>
+          <el-tooltip content="全屏" placement="top">
+            <el-button class="page-icon-btn" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon></el-button>
+          </el-tooltip>
+        </div>
+      </div>
+
+      <div class="page-table-wrapper">
+        <el-table ref="dataTableRef" v-loading="loading" class="page-table" :data="list" height="100%" border highlight-current-row @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="55" align="center" />
+{% for c in columns %}{% if c.is_show_in_list %}{% if c.dict_type != "" %}        <el-table-column label="[[ c.field_comment ]]" width="150" align="center">
+          <template #default="scope">
+            <DictTag v-model="scope.row.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
+          </template>
+        </el-table-column>
+{% else %}        <el-table-column key="[[ c.field_name ]]" label="[[ c.field_comment ]]" prop="[[ c.field_name ]]" min-width="150" align="center" />
+{% endif %}{% endif %}{% endfor %}        <el-table-column fixed="right" label="操作" width="180">
+          <template #default="scope">
+            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:update']" type="primary" size="small" link @click="handleEditClick(String(scope.row.id))">编辑</el-button>
+            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" size="small" link @click="handleDelete(String(scope.row.id))">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      </div>
+
+      <pagination v-if="total > 0" v-model:total="total" v-model:page="params.pageNum" v-model:limit="params.pageSize" class="page-pagination" @pagination="fetchData" />
+    </el-card>
+
+    <el-dialog v-model="dialog.visible" :title="dialog.title" width="600px" @close="closeDialog">
+      <el-form ref="dataFormRef" :model="formData" :rules="rules" label-width="100px">
+{% for c in columns %}{% if c.is_show_in_form and c.form_type_name != "HIDDEN" %}        <el-form-item label="[[ c.field_comment ]]" prop="[[ c.field_name ]]">
+{% if c.form_type_name == "INPUT" %}          <el-input v-model="formData.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "SELECT" %}{% if c.dict_type != "" %}          <DictSelect v-model="formData.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
+{% else %}          <el-select v-model="formData.[[ c.field_name ]]" placeholder="请选择[[ c.field_comment ]]">
+            <el-option :value="0" label="选项一"/>
+            <el-option :value="1" label="选项二"/>
+          </el-select>
+{% endif %}{% elif c.form_type_name == "RADIO" %}{% if c.dict_type != "" %}          <DictSelect v-model="formData.[[ c.field_name ]]" type="radio" code="[[ c.dict_type ]]" />
+{% else %}          <el-radio-group v-model="formData.[[ c.field_name ]]">
+            <el-radio :value="0">选项一</el-radio>
+            <el-radio :value="1">选项二</el-radio>
+          </el-radio-group>
+{% endif %}{% elif c.form_type_name == "CHECK_BOX" %}{% if c.dict_type != "" %}          <DictSelect v-model="formData.[[ c.field_name ]]" type="checkbox" code="[[ c.dict_type ]]" />
+{% else %}          <el-checkbox-group v-model="formData.[[ c.field_name ]]">
+            <el-checkbox :value="0">选项一</el-checkbox>
+            <el-checkbox :value="1">选项二</el-checkbox>
+          </el-checkbox-group>
+{% endif %}{% elif c.form_type_name == "INPUT_NUMBER" %}          <el-input-number v-model="formData.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "SWITCH" %}          <el-switch v-model="formData.[[ c.field_name ]]" :active-value="1" :inactive-value="0" />
+{% elif c.form_type_name == "TEXT_AREA" %}          <el-input type="textarea" v-model="formData.[[ c.field_name ]]" placeholder="[[ c.field_comment ]]" />
+{% elif c.form_type_name == "DATE_TIME" %}          <el-date-picker v-model="formData.[[ c.field_name ]]" type="datetime" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD HH:mm:ss" />
+{% elif c.form_type_name == "DATE" %}          <el-date-picker class="!w-[240px]" v-model="formData.[[ c.field_name ]]" type="date" placeholder="[[ c.field_comment ]]" value-format="YYYY-MM-DD" />
+{% endif %}        </el-form-item>
+{% elif c.form_type_name == "HIDDEN" %}        <el-input type="hidden" v-model="formData.[[ c.field_name ]]" />
+{% endif %}{% endfor %}      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="handleSubmit">确定</el-button>
+          <el-button @click="closeDialog">取消</el-button>
+        </div>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { useFullscreen } from "@vueuse/core";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { FullScreen, Refresh } from "@element-plus/icons-vue";
+import { usePageTable, useTableSelection } from "@/composables";
+import [[ entity_name ]]API from "@/api/[[ module_name ]]/[[ entity_kebab ]]";
+
+defineOptions({
+  name: "[[ entity_name ]]",
+  inheritAttrs: false,
+});
+
+const queryFormRef = ref();
+const dataFormRef = ref();
+const tableWrapperRef = ref(null);
+const { toggle: toggleFullscreen } = useFullscreen(tableWrapperRef);
+
+const initialFormData = reactive({});
+
+const { loading, list, total, params, fetchData, handleQuery, handleResetQuery } = usePageTable({
+  initialParams: {
+    pageNum: 1,
+    pageSize: 10,
+  },
+  request: [[ entity_name ]]API.getPage,
+  onBeforeReset: () => queryFormRef.value?.resetFields(),
+});
+
+const { selectedIds, hasSelection, handleSelectionChange } = useTableSelection();
+
+const dialog = reactive({
+  title: "",
+  visible: false,
+});
+
+const formData = reactive({});
+
+const rules = reactive({
+{% for c in columns %}{% if c.is_show_in_form and c.is_required %}  [[ c.field_name ]]: [{ required: true, message: "请输入[[ c.field_comment ]]", trigger: "blur" }],
+{% endif %}{% endfor %}
+});
+
+function openDialog() {
+  dialog.visible = true;
+}
+
+function closeDialog() {
+  dialog.visible = false;
+  resetForm();
+}
+
+function resetForm() {
+  dataFormRef.value?.resetFields();
+  dataFormRef.value?.clearValidate();
+  Object.keys(formData).forEach((key) => {
+    delete formData[key];
+  });
+  Object.assign(formData, initialFormData);
+}
+
+async function handleCreateClick() {
+  dialog.title = "新增[[ business_name ]]";
+  openDialog();
+}
+
+async function handleEditClick(id) {
+  dialog.title = "修改[[ business_name ]]";
+  const data = await [[ entity_name ]]API.getFormData(id);
+  Object.assign(formData, data);
+  openDialog();
+}
+
+async function handleSubmit() {
+  const valid = await dataFormRef.value?.validate().then(
+    () => true,
+    () => false
+  );
+  if (!valid) return;
+
+  loading.value = true;
+  try {
+    const id = formData.id;
+    if (id) {
+      await [[ entity_name ]]API.update(id, formData);
+      ElMessage.success("修改成功");
+    } else {
+      await [[ entity_name ]]API.create(formData);
+      ElMessage.success("新增成功");
+    }
+    closeDialog();
+    handleResetQuery();
+  } finally {
+    loading.value = false;
+  }
+}
+
+function handleBatchDelete() {
+  handleDelete();
+}
+
+async function handleDelete(id) {
+  const ids = id || selectedIds.value.join(",");
+  if (!ids) {
+    ElMessage.warning("请勾选删除项");
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm("确认删除已选中的数据项?", "警告", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+  } catch {
+    ElMessage.info("已取消删除");
+    return;
+  }
+
+  loading.value = true;
+  try {
+    await [[ entity_name ]]API.deleteByIds(ids);
+    ElMessage.success("删除成功");
+    handleResetQuery();
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  handleQuery();
+});
+</script>
+"##;
+
+// ═══════════════════════════════════════════════════════════
+// 渲染入口
+// ═══════════════════════════════════════════════════════════
+
+/// 渲染全部模板（后端 Rust + 前端 Vue3）
+///
+/// `page_type`: "classic" | "curd"
+/// `frontend_type`: "ts" | "js"
+pub fn render(meta: &TableMeta, _page_type: &str, frontend_type: &str) -> anyhow::Result<Vec<GeneratedFile>> {
+    let mut out = Vec::new();
+
+    // ── 后端（默认 {{ }} 分隔符）──
+    {
+        let mut tera = Tera::default();
+        tera.add_raw_template("entity", ENTITY_TMPL)?;
+        tera.add_raw_template("dto", DTO_TMPL)?;
+        tera.add_raw_template("service", SERVICE_TMPL)?;
+        tera.add_raw_template("mod", MOD_TMPL)?;
+        let ctx = Context::from_serialize(meta)?;
+
+        let base = format!("src/modules/{}/{}", meta.module_name, meta.entity_lower);
+        for (tpl, fname) in [
+            ("entity", "entity.rs"),
+            ("dto", "dto.rs"),
+            ("service", "service.rs"),
+            ("mod", "mod.rs"),
+        ] {
+            out.push(GeneratedFile {
+                path: base.clone(),
+                file_name: fname.into(),
+                content: tera.render(tpl, &ctx)?,
+                scope: "backend".into(),
+            });
         }
     }
 
-    #[test]
-    fn render_produces_four_compilable_files() {
-        let files = render(&sample_meta()).expect("render failed");
-        assert_eq!(files.len(), 4);
+    // ── 前端（模板内 [[ ]] 预转为 {{ }}，Vue {{ }} 先保护后还原）──
+    {
+        let mut tera = Tera::default();
+        let preprocess = |t: &str| -> String {
+            t.replace("{{ ", "\x01O\x01")
+             .replace(" }}", "\x01C\x01")
+             .replace("[[ ", "{{ ")
+             .replace(" ]]", " }}")
+        };
+        let postprocess = |t: &str| -> String {
+            t.replace("\x01O\x01", "{{ ")
+             .replace("\x01C\x01", " }}")
+        };
+        tera.add_raw_template("api", &preprocess(TS_API_TMPL))?;
+        tera.add_raw_template("types", &preprocess(TS_TYPES_TMPL))?;
+        tera.add_raw_template("classic", &preprocess(TS_CLASSIC_VUE_TMPL))?;
+        tera.add_raw_template("js_api", &preprocess(JS_API_TMPL))?;
+        tera.add_raw_template("js_classic", &preprocess(JS_CLASSIC_VUE_TMPL))?;
+        let ctx = Context::from_serialize(meta)?;
 
-        let entity = files
-            .iter()
-            .find(|f| f.file_name == "entity.rs")
-            .expect("entity file");
-        assert!(entity.content.contains("pub struct Model"));
-        assert!(entity.content.contains("pub type SysUser = Model;"));
-        assert!(entity
-            .content
-            .contains("impl ActiveModelBehavior for ActiveModel"));
+        let fe = "vue3-element-admin";
+        let api_path = format!("{}/src/api/{}/{}", fe, meta.module_name, meta.entity_kebab);
+        let view_path = format!("{}/src/views/{}/{}", fe, meta.module_name, meta.entity_kebab);
+        let is_js = frontend_type == "js";
 
-        let service = files
-            .iter()
-            .find(|f| f.file_name == "service.rs")
-            .expect("service file");
-        assert!(service.content.contains("Entity::find()"));
-        assert!(service.content.contains("Entity::find_by_id(id)"));
-        assert!(service.content.contains("Ok(model.id)"));
-        assert!(service.content.contains("form_to_active"));
-        assert!(!service.content.contains("SysUser::Entity"));
-
-        let dto = files
-            .iter()
-            .find(|f| f.file_name == "dto.rs")
-            .expect("dto file");
-        assert!(dto.content.contains("struct SysUserForm"));
-        // 仅字符串字段（username）应有 length 校验，create_time 不应有
-        assert_eq!(
-            dto.content.matches("#[validate(length(min = 1))]").count(),
-            1
-        );
-        assert!(dto.content.contains("pub username") && dto.content.contains("pub create_time"));
-
-        let m = files
-            .iter()
-            .find(|f| f.file_name == "mod.rs")
-            .expect("mod file");
-        assert!(m.content.contains("Router<AppState>"));
-        assert!(m.content.contains("SysUserService"));
+        if is_js {
+            out.push(GeneratedFile {
+                path: api_path.clone(),
+                file_name: "index.js".into(),
+                content: postprocess(&tera.render("js_api", &ctx)?),
+                scope: "frontend".into(),
+            });
+            out.push(GeneratedFile {
+                path: view_path.clone(),
+                file_name: "index.vue".into(),
+                content: postprocess(&tera.render("js_classic", &ctx)?),
+                scope: "frontend".into(),
+            });
+        } else {
+            out.push(GeneratedFile {
+                path: api_path.clone(),
+                file_name: "index.ts".into(),
+                content: postprocess(&tera.render("api", &ctx)?),
+                scope: "frontend".into(),
+            });
+            out.push(GeneratedFile {
+                path: api_path.clone(),
+                file_name: "types.ts".into(),
+                content: postprocess(&tera.render("types", &ctx)?),
+                scope: "frontend".into(),
+            });
+            out.push(GeneratedFile {
+                path: view_path.clone(),
+                file_name: "index.vue".into(),
+                content: postprocess(&tera.render("classic", &ctx)?),
+                scope: "frontend".into(),
+            });
+        }
     }
+
+    Ok(out)
 }

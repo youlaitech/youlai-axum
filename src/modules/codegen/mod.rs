@@ -1,28 +1,89 @@
 //! 代码生成器路由与接口
 //!
-//! 提供表列表、生成配置、代码预览与 zip 下载等代码生成接口。
+//! 提供表列表、生成配置 CRUD、代码预览与 zip 下载等接口。
 
 pub mod service;
 pub mod templates;
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::modules::codegen::service::{CodegenService, ColumnInfo};
+use crate::modules::codegen::service::CodegenService;
 use crate::response::Result;
 use crate::state::AppState;
+
+// ── 查询参数 ──
+
+#[derive(Debug, Deserialize)]
+pub struct PreviewQuery {
+    #[serde(default = "default_page_type")]
+    pub page_type: String,
+    #[serde(rename = "type", default = "default_frontend_type")]
+    pub frontend_type: String,
+}
+
+fn default_page_type() -> String {
+    "classic".into()
+}
+fn default_frontend_type() -> String {
+    "ts".into()
+}
+
+// ── 请求体 ──
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenConfigForm {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub table_name: String,
+    pub business_name: Option<String>,
+    pub module_name: Option<String>,
+    pub package_name: Option<String>,
+    pub entity_name: Option<String>,
+    pub author: Option<String>,
+    pub parent_menu_id: Option<i64>,
+    pub page_type: Option<String>,
+    pub remove_table_prefix: Option<String>,
+    pub field_configs: Option<Vec<FieldConfigForm>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldConfigForm {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub column_name: Option<String>,
+    pub column_type: Option<String>,
+    pub field_name: Option<String>,
+    pub field_sort: Option<i32>,
+    pub field_type: Option<String>,
+    pub field_comment: Option<String>,
+    pub is_show_in_list: Option<i16>,
+    pub is_show_in_form: Option<i16>,
+    pub is_show_in_query: Option<i16>,
+    pub is_required: Option<i16>,
+    pub max_length: Option<i32>,
+    pub form_type: Option<i16>,
+    pub query_type: Option<i16>,
+    pub dict_type: Option<String>,
+}
+
+// ── 响应 VO ──
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableVO {
     pub table_name: String,
     pub table_comment: String,
+    pub engine: String,
+    pub create_time: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -32,9 +93,20 @@ pub struct ColumnVO {
     pub data_type: String,
     pub column_comment: String,
     pub is_nullable: String,
-    pub column_key: String,
     pub is_pk: bool,
-    pub rust_type: String,
+    pub column_key: String,
+    pub field_name: String,
+    pub field_type: String,
+    pub ts_type: String,
+    pub is_show_in_list: i16,
+    pub is_show_in_form: i16,
+    pub is_show_in_query: i16,
+    pub is_required: i16,
+    pub form_type: Option<i16>,
+    pub query_type: Option<i16>,
+    pub dict_type: Option<String>,
+    pub max_length: Option<i32>,
+    pub field_sort: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,19 +129,26 @@ pub struct PreviewVO {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenConfigVO {
+    pub id: Option<i64>,
     pub table_name: String,
+    pub business_name: Option<String>,
+    pub module_name: Option<String>,
+    pub package_name: Option<String>,
     pub entity_name: String,
-    pub module_name: String,
-    pub business_name: String,
-    pub package_name: String,
-    pub author: String,
-    pub columns: Vec<ColumnVO>,
+    pub author: Option<String>,
+    pub parent_menu_id: Option<i64>,
+    pub page_type: Option<String>,
+    pub remove_table_prefix: Option<String>,
+    pub field_configs: Vec<ColumnVO>,
 }
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/codegen/table", get(list_tables))
-        .route("/api/v1/codegen/{table_name}/config", get(get_config))
+        .route(
+            "/api/v1/codegen/{table_name}/config",
+            get(get_config).post(save_config).delete(delete_config),
+        )
         .route("/api/v1/codegen/{table_name}/preview", get(preview))
         .route("/api/v1/codegen/{table_name}/download", get(download))
 }
@@ -82,78 +161,75 @@ async fn list_tables(State(state): State<AppState>) -> AppResult<Json<Result<Tab
         .map(|(table_name, table_comment)| TableVO {
             table_name,
             table_comment,
+            engine: "InnoDB".into(),
+            create_time: None,
         })
         .collect::<Vec<_>>();
     let total = list.len() as u64;
     Ok(Json(Result::success(TableListVO { list, total })))
 }
 
-/// 获取代码生成配置（由元数据推导）
+/// 获取代码生成配置
 async fn get_config(
     State(state): State<AppState>,
     Path(table_name): Path<String>,
 ) -> AppResult<Json<Result<GenConfigVO>>> {
-    let meta = CodegenService::new(&state.db).config(&table_name).await?;
-    let columns = meta
-        .columns
-        .iter()
-        .map(|c: &ColumnInfo| ColumnVO {
-            column_name: c.name.clone(),
-            data_type: c.rust_type.clone(),
-            column_comment: c.comment.clone(),
-            is_nullable: if c.is_nullable {
-                "YES".into()
-            } else {
-                "NO".into()
-            },
-            column_key: if c.is_pk { "PRI".into() } else { String::new() },
-            is_pk: c.is_pk,
-            rust_type: c.rust_type.clone(),
-        })
-        .collect();
-    let config = GenConfigVO {
-        table_name: meta.table_name.clone(),
-        entity_name: meta.entity_name.clone(),
-        module_name: meta.module_name.clone(),
-        business_name: meta.entity_lower.clone(),
-        package_name: "youlai.rust".into(),
-        author: "youlai-axum".into(),
-        columns,
-    };
+    let config = CodegenService::new(&state.db)
+        .config(&table_name)
+        .await?;
     Ok(Json(Result::success(config)))
+}
+
+/// 保存代码生成配置
+async fn save_config(
+    State(state): State<AppState>,
+    Path(table_name): Path<String>,
+    Json(form): Json<GenConfigForm>,
+) -> AppResult<Json<Result<()>>> {
+    CodegenService::new(&state.db)
+        .save_config(&table_name, &form)
+        .await?;
+    Ok(Json(Result::success_empty()))
+}
+
+/// 删除代码生成配置
+async fn delete_config(
+    State(state): State<AppState>,
+    Path(table_name): Path<String>,
+) -> AppResult<Json<Result<()>>> {
+    CodegenService::new(&state.db)
+        .delete_config(&table_name)
+        .await?;
+    Ok(Json(Result::success_empty()))
 }
 
 /// 预览生成的代码
 async fn preview(
     State(state): State<AppState>,
     Path(table_name): Path<String>,
+    Query(q): Query<PreviewQuery>,
 ) -> AppResult<Json<Result<Vec<PreviewVO>>>> {
-    let files = CodegenService::new(&state.db).preview(&table_name).await?;
-    let list = files
-        .into_iter()
-        .map(|f| PreviewVO {
-            path: f.path,
-            file_name: f.file_name,
-            content: f.content,
-            scope: "backend".into(),
-            language: "rs".into(),
-        })
-        .collect();
-    Ok(Json(Result::success(list)))
+    let files = CodegenService::new(&state.db)
+        .preview(&table_name, &q.page_type, &q.frontend_type)
+        .await?;
+    Ok(Json(Result::success(files)))
 }
 
 /// 下载生成的代码（zip）
 async fn download(
     State(state): State<AppState>,
     Path(table_name): Path<String>,
+    Query(q): Query<PreviewQuery>,
 ) -> AppResult<axum::response::Response> {
-    let bytes = CodegenService::new(&state.db).download(&table_name).await?;
+    let bytes = CodegenService::new(&state.db)
+        .download(&table_name, &q.page_type, &q.frontend_type)
+        .await?;
     let resp = axum::response::Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/zip")
         .header(
             "Content-Disposition",
-            "attachment; filename=\"codegen.zip\"",
+            "attachment; filename=\"youlai-admin-code.zip\"",
         )
         .body(axum::body::Body::from(bytes))
         .map_err(|e| {

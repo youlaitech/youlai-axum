@@ -72,7 +72,7 @@
 
 ## 快速开始
 
-**环境要求**：Rust 1.82+ · PostgreSQL 16+ · Redis 7.x · VS Build Tools（Windows 必装）
+**环境要求**：Rust 1.82+ · PostgreSQL 16+ · Redis 7.x · CMake + VS Build Tools（Windows 必装）
 
 > **Windows 用户**：Rust 默认使用 MSVC 工具链，需要 Visual Studio Build Tools 中的 C++ 工作负载。下载 [vs_buildtools.exe](https://aka.ms/vs/17/release/vs_buildtools.exe)，安装时勾选「使用 C++ 的桌面开发」，否则会遇到 `linker link.exe not found`。
 
