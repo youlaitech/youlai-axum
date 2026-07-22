@@ -1,6 +1,11 @@
+//! 认证主体与角色数据权限。
+//!
+//! `Principal` 在 JWT 校验通过后构造，包含 userId、用户名、角色列表与权限码集合，
+//! 通过 `axum::Extension` 注入到 handler 中。
+
 use serde::{Deserialize, Serialize};
 
-/// 角色数据权限
+/// 角色数据权限：dataScope + 部门 ID 列表
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleDataScope {
     pub data_scope: i32,

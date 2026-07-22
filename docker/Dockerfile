@@ -13,8 +13,8 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=builder /app/target/release/youlai-rust /app/youlai-rust
+COPY --from=builder /app/target/release/youlai-axum /app/youlai-axum
 COPY --from=builder /app/config /app/config
 COPY --from=builder /app/templates /app/templates
 EXPOSE 8000
-CMD ["/app/youlai-rust"]
+CMD ["/app/youlai-axum"]

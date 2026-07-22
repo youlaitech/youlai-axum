@@ -10,9 +10,28 @@ enabled = true
 limit = 1000
 window_seconds = 60
 strict_limit = 5
-strict_paths = "/api/v1/users/me"
+strict_paths = ""
 
 [file]
-storage_path = "./uploads"
+type = "minio"
+
+[file.upload]
+max_file_size_mb = 50
+allowed_extensions = "jpg,jpeg,png,gif"
+
+[file.minio]
+endpoint = "http://111.229.83.153:9000"
+access_key = "bybaddp7zyARpgNbEGKf"
+secret_key = "p9rBdQZPBIJcMH23iyFkZkXmmawbmwPlk3JLlaaj"
+bucket = "public"
+domain = ""
+
+[file.local]
+path = "./uploads"
 base_url = "/files"
-type = "local"
+
+[file.aliyun]
+endpoint = "oss-cn-hangzhou.aliyuncs.com"
+access_key_id = "your-access-key-id"
+access_key_secret = "your-access-key-secret"
+bucket = "default"

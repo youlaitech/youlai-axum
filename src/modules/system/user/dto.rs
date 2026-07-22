@@ -1,6 +1,6 @@
+use crate::pagination::{default_page_num, default_page_size};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
-use crate::common::pagination::{default_page_num, default_page_size};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,7 +138,8 @@ pub struct UserVO {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserProfileVO {
-    pub id: i64,
+    #[serde(rename = "userId")]
+    pub user_id: i64,
     pub username: Option<String>,
     pub nickname: Option<String>,
     pub gender: i16,

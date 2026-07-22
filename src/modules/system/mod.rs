@@ -1,14 +1,19 @@
-pub mod user;
-pub mod role;
-pub mod menu;
+//! 系统管理模块：用户 / 角色 / 菜单 / 部门 / 字典 / 配置 / 通知 / 日志 CRUD。
+//!
+//! 路由入口 `/api/v1/users`, `/api/v1/roles`, `/api/v1/menus`, `/api/v1/depts` 等。
+
+pub mod config;
+pub mod data_scope;
 pub mod dept;
 pub mod dict;
-pub mod config;
-pub mod notice;
 pub mod log;
+pub mod menu;
+pub mod notice;
+pub mod role;
+pub mod user;
 
+use crate::state::AppState;
 use axum::Router;
-use crate::core::state::AppState;
 
 /// 组装所有 system 子路由
 pub fn routes() -> Router<AppState> {

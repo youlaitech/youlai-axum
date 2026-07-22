@@ -9,7 +9,7 @@ use serde::Serialize;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-use crate::framework::sse::topics::ONLINE_COUNT;
+use crate::modules::message::topics::ONLINE_COUNT;
 
 /// 一条 SSE 事件：事件名 + JSON 数据
 #[derive(Clone, Debug, Serialize)]
@@ -19,7 +19,7 @@ pub struct SseEvent {
 }
 
 /// SSE 管理器：维护在线连接与会话表
-pub struct SseManager {
+pub struct MessageHub {
     /// user_id -> 该用户的多个连接发送端（多设备）
     sessions: RwLock<HashMap<String, Vec<(Uuid, mpsc::UnboundedSender<SseEvent>)>>>,
     /// 在线用户数（按 user_id 去重）
@@ -28,12 +28,12 @@ pub struct SseManager {
 
 /// 连接生命周期守卫：drop 时自动从会话表移除并广播人数变化
 pub struct SseGuard {
-    manager: Arc<SseManager>,
+    manager: Arc<MessageHub>,
     user_id: i64,
     conn_id: Uuid,
 }
 
-impl SseManager {
+impl MessageHub {
     pub fn new() -> Self {
         Self {
             sessions: RwLock::new(HashMap::new()),
@@ -42,17 +42,17 @@ impl SseManager {
     }
 
     /// 建立连接：注册发送端，返回接收端与守卫
-    pub async fn connect(self: &Arc<Self>, user_id: i64) -> (mpsc::UnboundedReceiver<SseEvent>, SseGuard) {
+    pub async fn connect(
+        self: &Arc<Self>,
+        user_id: i64,
+    ) -> (mpsc::UnboundedReceiver<SseEvent>, SseGuard) {
         let (tx, rx) = mpsc::unbounded_channel();
         let conn_id = Uuid::new_v4();
         let key = user_id.to_string();
 
         let mut sessions = self.sessions.write().await;
         let is_new_user = !sessions.contains_key(&key);
-        sessions
-            .entry(key.clone())
-            .or_default()
-            .push((conn_id, tx));
+        sessions.entry(key.clone()).or_default().push((conn_id, tx));
 
         if is_new_user {
             self.online.fetch_add(1, Ordering::SeqCst);
@@ -87,7 +87,10 @@ impl SseManager {
         let key = user_id.to_string();
         let sessions = self.sessions.read().await;
         if let Some(vec) = sessions.get(&key) {
-            let evt = SseEvent { event: event.to_string(), data };
+            let evt = SseEvent {
+                event: event.to_string(),
+                data,
+            };
             for (_, tx) in vec {
                 let _ = tx.send(evt.clone());
             }
@@ -97,7 +100,10 @@ impl SseManager {
     /// 广播给所有在线连接
     pub async fn broadcast(&self, event: &str, data: serde_json::Value) {
         let sessions = self.sessions.read().await;
-        let evt = SseEvent { event: event.to_string(), data };
+        let evt = SseEvent {
+            event: event.to_string(),
+            data,
+        };
         for vec in sessions.values() {
             for (_, tx) in vec {
                 let _ = tx.send(evt.clone());
@@ -130,7 +136,9 @@ impl Drop for SseGuard {
         tokio::spawn(async move {
             manager.disconnect(user_id, conn_id).await;
             let count = manager.online_count();
-            manager.broadcast(ONLINE_COUNT, serde_json::json!(count)).await;
+            manager
+                .broadcast(ONLINE_COUNT, serde_json::json!(count))
+                .await;
         });
     }
 }

@@ -164,7 +164,7 @@ impl ResultCode {
         }
     }
 
-    /// 获取错误消息
+    /// 返回中文错误消息
     pub fn msg(&self) -> &'static str {
         match self {
             Self::Success => "成功",
@@ -212,7 +212,7 @@ impl ResultCode {
 
 // 数据权限枚举
 
-/// 数据权限范围（与 PG sys_role.data_scope 字段值一致）
+/// 数据权限范围：ALL(1)=全部 / DEPT_AND_SUB(2)=本部门及子部门 / DEPT(3)=本部门 / SELF(4)=本人 / CUSTOM(5)=指定部门
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataScope {
     All = 1,

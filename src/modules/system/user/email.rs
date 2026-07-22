@@ -3,14 +3,18 @@
 //! 配置缺失（server/username 为空）时降级为日志打印，
 //! 避免无 SMTP 环境下注册/绑定流程被阻断。
 
-use crate::core::config::MailConfig;
+use crate::config::MailConfig;
 
 /// 发送邮箱验证码
 pub async fn send_code(email: &str, code: &str, cfg: &MailConfig) {
-    let subject = "【youlai-rust】邮箱验证码";
+    let subject = "【youlai-axum】邮箱验证码";
     let text = format!("您的验证码是：{}，5 分钟内有效。", code);
     if cfg.server.is_empty() || cfg.username.is_empty() {
-        tracing::info!("email code to {} (smtp not configured, print only): {}", email, code);
+        tracing::info!(
+            "email code to {} (smtp not configured, print only): {}",
+            email,
+            code
+        );
         return;
     }
     match send_smtp(email, subject, &text, cfg).await {

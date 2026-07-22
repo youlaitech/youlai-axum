@@ -1,5 +1,5 @@
+use crate::pagination::{default_page_num, default_page_size};
 use serde::{Deserialize, Serialize};
-use crate::common::pagination::{default_page_num, default_page_size};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

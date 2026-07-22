@@ -77,8 +77,8 @@ pub struct {{ entity_name }}Form {
 
 /// Service 模板
 const SERVICE_TMPL: &str = r#"use sea_orm::*;
-use crate::framework::web::error::{AppError, AppResult};
-use crate::common::enums::ResultCode;
+use crate::error::{AppError, AppResult};
+use crate::result_code::ResultCode;
 use super::entity::*;
 use super::dto::*;
 
@@ -140,10 +140,10 @@ use axum::{
     routing::{get, post, put, delete},
     Json, Router,
 };
-use crate::core::state::AppState;
-use crate::framework::web::error::{AppError, AppResult};
-use crate::framework::web::response::Result;
-use crate::common::enums::ResultCode;
+use crate::state::AppState;
+use crate::error::{AppError, AppResult};
+use crate::response::Result;
+use crate::result_code::ResultCode;
 use dto::*;
 use entity::SysUser;
 use service::{{ entity_name }}Service;
@@ -192,24 +192,44 @@ pub fn render(meta: &TableMeta) -> anyhow::Result<Vec<GeneratedFile>> {
     let ctx = Context::from_serialize(meta)?;
 
     let files = [
-        ("entity", format!("src/modules/{}/{}", meta.module_name, meta.entity_lower), "entity.rs".to_string()),
-        ("dto", format!("src/modules/{}/{}", meta.module_name, meta.entity_lower), "dto.rs".to_string()),
-        ("service", format!("src/modules/{}/{}", meta.module_name, meta.entity_lower), "service.rs".to_string()),
-        ("mod", format!("src/modules/{}/{}", meta.module_name, meta.entity_lower), "mod.rs".to_string()),
+        (
+            "entity",
+            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
+            "entity.rs".to_string(),
+        ),
+        (
+            "dto",
+            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
+            "dto.rs".to_string(),
+        ),
+        (
+            "service",
+            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
+            "service.rs".to_string(),
+        ),
+        (
+            "mod",
+            format!("src/modules/{}/{}", meta.module_name, meta.entity_lower),
+            "mod.rs".to_string(),
+        ),
     ];
 
     let mut out = Vec::with_capacity(files.len());
     for (tpl, path, file_name) in files {
         let content = tera.render(tpl, &ctx)?;
-        out.push(GeneratedFile { path, file_name, content });
+        out.push(GeneratedFile {
+            path,
+            file_name,
+            content,
+        });
     }
     Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::modules::codegen::service::{ColumnInfo, TableMeta};
     use super::*;
+    use crate::modules::codegen::service::{ColumnInfo, TableMeta};
 
     fn sample_meta() -> TableMeta {
         TableMeta {
@@ -260,27 +280,43 @@ mod tests {
         let files = render(&sample_meta()).expect("render failed");
         assert_eq!(files.len(), 4);
 
-        let entity = files.iter().find(|f| f.file_name == "entity.rs").expect("entity file");
+        let entity = files
+            .iter()
+            .find(|f| f.file_name == "entity.rs")
+            .expect("entity file");
         assert!(entity.content.contains("pub struct Model"));
         assert!(entity.content.contains("pub type SysUser = Model;"));
-        assert!(entity.content.contains("impl ActiveModelBehavior for ActiveModel"));
+        assert!(entity
+            .content
+            .contains("impl ActiveModelBehavior for ActiveModel"));
 
-        let service = files.iter().find(|f| f.file_name == "service.rs").expect("service file");
+        let service = files
+            .iter()
+            .find(|f| f.file_name == "service.rs")
+            .expect("service file");
         assert!(service.content.contains("Entity::find()"));
         assert!(service.content.contains("Entity::find_by_id(id)"));
         assert!(service.content.contains("Ok(model.id)"));
         assert!(service.content.contains("form_to_active"));
         assert!(!service.content.contains("SysUser::Entity"));
 
-        let dto = files.iter().find(|f| f.file_name == "dto.rs").expect("dto file");
+        let dto = files
+            .iter()
+            .find(|f| f.file_name == "dto.rs")
+            .expect("dto file");
         assert!(dto.content.contains("struct SysUserForm"));
         // 仅字符串字段（username）应有 length 校验，create_time 不应有
-        assert_eq!(dto.content.matches("#[validate(length(min = 1))]").count(), 1);
+        assert_eq!(
+            dto.content.matches("#[validate(length(min = 1))]").count(),
+            1
+        );
         assert!(dto.content.contains("pub username") && dto.content.contains("pub create_time"));
 
-        let m = files.iter().find(|f| f.file_name == "mod.rs").expect("mod file");
+        let m = files
+            .iter()
+            .find(|f| f.file_name == "mod.rs")
+            .expect("mod file");
         assert!(m.content.contains("Router<AppState>"));
         assert!(m.content.contains("SysUserService"));
     }
 }
-

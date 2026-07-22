@@ -7,9 +7,9 @@ use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 use zip::ZipWriter;
 
-use crate::common::enums::ResultCode;
-use crate::framework::web::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult};
 use crate::modules::codegen::templates;
+use crate::result_code::ResultCode;
 
 /// 模板上下文：字段信息
 #[derive(Debug, Clone, Serialize)]
@@ -72,7 +72,11 @@ impl<'a> CodegenService<'a> {
         "#;
         let rows = self
             .db
-            .query_all(Statement::from_sql_and_values(DbBackend::Postgres, sql, Vec::<sea_orm::Value>::new()))
+            .query_all(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                sql,
+                Vec::<sea_orm::Value>::new(),
+            ))
             .await?;
         let mut list = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -230,8 +234,9 @@ impl<'a> CodegenService<'a> {
             for f in &files {
                 let entry = format!("{}/{}", f.path, f.file_name);
                 zip.start_file(&entry, opts).map_err(zip_err)?;
-                zip.write_all(f.content.as_bytes())
-                    .map_err(|e| AppError::Business(ResultCode::SystemError, Some(e.to_string())))?;
+                zip.write_all(f.content.as_bytes()).map_err(|e| {
+                    AppError::Business(ResultCode::SystemError, Some(e.to_string()))
+                })?;
             }
             zip.finish().map_err(zip_err)?;
         }

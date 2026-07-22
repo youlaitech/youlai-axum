@@ -1,34 +1,55 @@
 //! 通知公告服务：发布、撤回、已读
 
-use sea_orm::*;
 use sea_orm::sea_query::Expr;
+use sea_orm::*;
 use std::collections::HashMap;
 
-use crate::common::enums::ResultCode;
-use crate::common::pagination::PageData;
 use crate::entity;
-use crate::framework::web::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult};
 use crate::modules::system::notice::dto::*;
+use crate::pagination::PageData;
+use crate::result_code::ResultCode;
 
 /// 通知公告服务
-pub struct NoticeService<'a> { db: &'a DatabaseConnection }
+pub struct NoticeService<'a> {
+    db: &'a DatabaseConnection,
+}
 
 impl<'a> NoticeService<'a> {
-    pub fn new(db: &'a DatabaseConnection) -> Self { Self { db } }
+    pub fn new(db: &'a DatabaseConnection) -> Self {
+        Self { db }
+    }
 
     /// 通知公告分页列表
     pub async fn get_page(&self, q: &NoticeQuery) -> AppResult<PageData<NoticeVO>> {
-        let mut s = entity::sys_notice::Entity::find().filter(entity::sys_notice::Column::IsDeleted.eq(0));
-        if let Some(ref t) = q.title { if !t.is_empty() { s = s.filter(entity::sys_notice::Column::Title.like(format!("%{t}%"))); } }
-        if let Some(ps) = q.publish_status { s = s.filter(entity::sys_notice::Column::PublishStatus.eq(ps)); }
+        let mut s =
+            entity::sys_notice::Entity::find().filter(entity::sys_notice::Column::IsDeleted.eq(0));
+        if let Some(ref t) = q.title {
+            if !t.is_empty() {
+                s = s.filter(entity::sys_notice::Column::Title.like(format!("%{t}%")));
+            }
+        }
+        if let Some(ps) = q.publish_status {
+            s = s.filter(entity::sys_notice::Column::PublishStatus.eq(ps));
+        }
         let total = s.clone().count(self.db).await?;
-        let rows = s.order_by_desc(entity::sys_notice::Column::CreateTime).paginate(self.db, q.page_size as u64).fetch_page((q.page_num - 1) as u64).await?;
-        Ok(PageData::new(rows.iter().map(|r| self.to_vo(r)).collect(), total))
+        let rows = s
+            .order_by_desc(entity::sys_notice::Column::CreateTime)
+            .paginate(self.db, q.page_size as u64)
+            .fetch_page((q.page_num - 1) as u64)
+            .await?;
+        Ok(PageData::new(
+            rows.iter().map(|r| self.to_vo(r)).collect(),
+            total,
+        ))
     }
 
     /// 获取通知表单
     pub async fn get_form(&self, id: i64) -> AppResult<NoticeVO> {
-        let r = entity::sys_notice::Entity::find_by_id(id).one(self.db).await?.unwrap();
+        let r = entity::sys_notice::Entity::find_by_id(id)
+            .one(self.db)
+            .await?
+            .unwrap();
         Ok(self.to_vo(&r))
     }
 
@@ -44,7 +65,9 @@ impl<'a> NoticeService<'a> {
             target_user_ids: r.target_user_ids.clone(),
             publish_status: r.publish_status,
             publisher_id: r.publisher_id,
-            publish_time: r.publish_time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
+            publish_time: r
+                .publish_time
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
             revoke_time: None,
             create_time: r.create_time.format("%Y-%m-%d %H:%M:%S").to_string().into(),
             is_read: None,
@@ -52,33 +75,76 @@ impl<'a> NoticeService<'a> {
     }
 
     /// sys_notice::Model + sys_user_notice::Model -> NoticeVO（带已读状态）
-    fn to_vo_with_read(&self, r: &entity::sys_notice::Model, un: &entity::sys_user_notice::Model) -> NoticeVO {
+    fn to_vo_with_read(
+        &self,
+        r: &entity::sys_notice::Model,
+        un: &entity::sys_user_notice::Model,
+    ) -> NoticeVO {
         let mut vo = self.to_vo(r);
         vo.is_read = Some(un.is_read);
-        vo.revoke_time = r.revoke_time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string());
+        vo.revoke_time = r
+            .revoke_time
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string());
         vo
     }
 
     /// 将用户 ID 数组转换为逗号分隔字符串存储
     fn join_ids(ids: &Option<Vec<i64>>) -> Option<String> {
-        ids.as_ref().map(|v| v.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","))
+        ids.as_ref().map(|v| {
+            v.iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
     }
 
     /// 新增通知公告
     pub async fn create(&self, f: &NoticeCreate) -> AppResult<i64> {
-        Ok(entity::sys_notice::ActiveModel { title: Set(Some(f.title.clone())), content: Set(f.content.clone()), r#type: Set(f.r#type), level: Set(f.level.clone()), target_type: Set(f.target_type), target_user_ids: Set(Self::join_ids(&f.target_user_ids)), create_by: Set(1), create_time: Set(chrono::Utc::now().naive_utc()), ..Default::default() }.insert(self.db).await?.id)
+        Ok(entity::sys_notice::ActiveModel {
+            title: Set(Some(f.title.clone())),
+            content: Set(f.content.clone()),
+            r#type: Set(f.r#type),
+            level: Set(f.level.clone()),
+            target_type: Set(f.target_type),
+            target_user_ids: Set(Self::join_ids(&f.target_user_ids)),
+            create_by: Set(1),
+            create_time: Set(chrono::Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .insert(self.db)
+        .await?
+        .id)
     }
 
     /// 更新通知公告
     pub async fn update(&self, f: &NoticeUpdate) -> AppResult<()> {
-        let mut a: entity::sys_notice::ActiveModel = entity::sys_notice::Entity::find_by_id(f.id).one(self.db).await?.unwrap().into();
-        a.title = Set(Some(f.title.clone())); a.content = Set(f.content.clone()); a.r#type = Set(f.r#type); a.level = Set(f.level.clone()); a.target_type = Set(f.target_type); a.target_user_ids = Set(Self::join_ids(&f.target_user_ids)); a.update(self.db).await?; Ok(())
+        let mut a: entity::sys_notice::ActiveModel = entity::sys_notice::Entity::find_by_id(f.id)
+            .one(self.db)
+            .await?
+            .unwrap()
+            .into();
+        a.title = Set(Some(f.title.clone()));
+        a.content = Set(f.content.clone());
+        a.r#type = Set(f.r#type);
+        a.level = Set(f.level.clone());
+        a.target_type = Set(f.target_type);
+        a.target_user_ids = Set(Self::join_ids(&f.target_user_ids));
+        a.update(self.db).await?;
+        Ok(())
     }
 
     /// 批量删除通知公告（逻辑删除）
     pub async fn delete(&self, ids: &str) -> AppResult<u64> {
-        let ids: Vec<i64> = ids.split(',').filter_map(|s| s.trim().parse().ok()).collect();
-        Ok(sea_orm::Update::many(entity::sys_notice::Entity).col_expr(entity::sys_notice::Column::IsDeleted, Expr::value(1)).filter(entity::sys_notice::Column::Id.is_in(ids)).exec(self.db).await?.rows_affected)
+        let ids: Vec<i64> = ids
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        Ok(sea_orm::Update::many(entity::sys_notice::Entity)
+            .col_expr(entity::sys_notice::Column::IsDeleted, Expr::value(1))
+            .filter(entity::sys_notice::Column::Id.is_in(ids))
+            .exec(self.db)
+            .await?
+            .rows_affected)
     }
 
     /// 发布通知：写未读记录，返回通知体与目标用户 ID 列表
@@ -88,7 +154,10 @@ impl<'a> NoticeService<'a> {
             .await?
             .ok_or_else(|| AppError::Business(ResultCode::DataNotFound, None))?;
         if notice.publish_status == 1 {
-            return Err(AppError::Business(ResultCode::SystemError, Some("通知已发布".into())));
+            return Err(AppError::Business(
+                ResultCode::SystemError,
+                Some("通知已发布".into()),
+            ));
         }
 
         // 删除旧未读记录（支持重新发布）
@@ -97,7 +166,9 @@ impl<'a> NoticeService<'a> {
             .all(self.db)
             .await?;
         for r in old {
-            entity::sys_user_notice::Entity::delete_by_id(r.id).exec(self.db).await?;
+            entity::sys_user_notice::Entity::delete_by_id(r.id)
+                .exec(self.db)
+                .await?;
         }
 
         // 按目标类型筛选用户
@@ -144,9 +215,18 @@ impl<'a> NoticeService<'a> {
 
         // 更新通知状态
         sea_orm::Update::many(entity::sys_notice::Entity)
-            .col_expr(entity::sys_notice::Column::PublishStatus, Expr::value(1_i16))
-            .col_expr(entity::sys_notice::Column::PublishTime, Expr::value(chrono::Utc::now().naive_utc()))
-            .col_expr(entity::sys_notice::Column::PublisherId, Expr::value(publisher_id))
+            .col_expr(
+                entity::sys_notice::Column::PublishStatus,
+                Expr::value(1_i16),
+            )
+            .col_expr(
+                entity::sys_notice::Column::PublishTime,
+                Expr::value(chrono::Utc::now().naive_utc()),
+            )
+            .col_expr(
+                entity::sys_notice::Column::PublisherId,
+                Expr::value(publisher_id),
+            )
             .filter(entity::sys_notice::Column::Id.eq(id))
             .exec(self.db)
             .await?;
@@ -162,12 +242,21 @@ impl<'a> NoticeService<'a> {
             .await?
             .ok_or_else(|| AppError::Business(ResultCode::DataNotFound, None))?;
         if notice.publish_status != 1 {
-            return Err(AppError::Business(ResultCode::SystemError, Some("通知未发布或已撤回".into())));
+            return Err(AppError::Business(
+                ResultCode::SystemError,
+                Some("通知未发布或已撤回".into()),
+            ));
         }
 
         sea_orm::Update::many(entity::sys_notice::Entity)
-            .col_expr(entity::sys_notice::Column::PublishStatus, Expr::value(-1_i16))
-            .col_expr(entity::sys_notice::Column::RevokeTime, Expr::value(chrono::Utc::now().naive_utc()))
+            .col_expr(
+                entity::sys_notice::Column::PublishStatus,
+                Expr::value(-1_i16),
+            )
+            .col_expr(
+                entity::sys_notice::Column::RevokeTime,
+                Expr::value(chrono::Utc::now().naive_utc()),
+            )
             .filter(entity::sys_notice::Column::Id.eq(id))
             .exec(self.db)
             .await?;
@@ -177,13 +266,19 @@ impl<'a> NoticeService<'a> {
             .all(self.db)
             .await?;
         for r in old {
-            entity::sys_user_notice::Entity::delete_by_id(r.id).exec(self.db).await?;
+            entity::sys_user_notice::Entity::delete_by_id(r.id)
+                .exec(self.db)
+                .await?;
         }
         Ok(())
     }
 
     /// 我的通知列表：以 sys_user_notice 为基准，只返回推送给当前用户的通知
-    pub async fn get_my_notices(&self, user_id: i64, q: &NoticeQuery) -> AppResult<PageData<NoticeVO>> {
+    pub async fn get_my_notices(
+        &self,
+        user_id: i64,
+        q: &NoticeQuery,
+    ) -> AppResult<PageData<NoticeVO>> {
         let un = entity::sys_user_notice::Entity::find()
             .filter(entity::sys_user_notice::Column::UserId.eq(user_id))
             .filter(entity::sys_user_notice::Column::IsDeleted.eq(0));
@@ -205,7 +300,11 @@ impl<'a> NoticeService<'a> {
             let notice_map: HashMap<i64, entity::sys_notice::Model> =
                 notices.into_iter().map(|n| (n.id, n)).collect();
             rows.iter()
-                .filter_map(|un_row| notice_map.get(&un_row.notice_id).map(|n| self.to_vo_with_read(n, un_row)))
+                .filter_map(|un_row| {
+                    notice_map
+                        .get(&un_row.notice_id)
+                        .map(|n| self.to_vo_with_read(n, un_row))
+                })
                 .collect()
         };
         Ok(PageData::new(list, total))

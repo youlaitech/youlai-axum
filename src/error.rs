@@ -1,6 +1,10 @@
+//! 统一错误类型：将业务错误码、数据库异常、验证失败等映射为 HTTP 响应。
+//!
+//! `AppError` 实现 `IntoResponse`，可在 handler 中直接用 `?` 传播，自动转为 `{code, msg, data}` 格式。
+
+use crate::response::Result;
+use crate::result_code::ResultCode;
 use axum::{http::StatusCode, response::IntoResponse, Json};
-use crate::common::enums::ResultCode;
-use crate::framework::web::response::Result;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {

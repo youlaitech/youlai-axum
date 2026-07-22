@@ -1,11 +1,14 @@
+//! Swagger UI / OpenAPI 文档路由：/swagger-ui、/openapi.json
+
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+/// 注册 Swagger UI 路由（/swagger-ui、/openapi.json）
 pub fn swagger_ui() -> SwaggerUi {
     #[derive(OpenApi)]
     #[openapi(
         info(
-            title = "youlai-rust API",
+            title = "youlai-axum API",
             version = "1.0.0",
             description = "Rust Axum SeaORM PostgreSQL admin backend"
         ),

@@ -1,3 +1,7 @@
+//! 认证模块：登录/登出、验证码、JWT 令牌签发与校验、权限拦截、扫码登录。
+//!
+//! 路由入口 `/api/v1/auth/*`，含扫码登录 `/api/v1/auth/qr-code/*`。
+
 use validator::Validate;
 pub mod captcha;
 pub mod dto;
@@ -48,6 +52,10 @@ async fn login(
     Json(req): Json<LoginRequest>,
 ) -> AppResult<Json<Result<LoginResp>>> {
     req.validate()?;
+    // 按账号限流（5 次/60 秒），防爆破同时避免同 IP 多账号互挤
+    if !crate::rate_limit::login_rate_allowed(&state.redis, &req.username).await? {
+        return Err(crate::rate_limit::login_rate_limited());
+    }
     let result = AuthService::new(&state.db, &state.redis, &state.token_manager)
         .login(&req)
         .await?;

@@ -1,3 +1,6 @@
+use crate::response::Result;
+use crate::result_code::ResultCode;
+use crate::state::AppState;
 use axum::{
     body::Body,
     extract::State,
@@ -5,9 +8,6 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Json, Response},
 };
-use crate::core::state::AppState;
-use crate::common::enums::ResultCode;
-use crate::framework::web::response::Result;
 
 /// Token 认证中间件：从 Authorization 头提取 Bearer token，解析后注入请求 extensions
 pub async fn auth_layer(
@@ -16,18 +16,30 @@ pub async fn auth_layer(
     next: Next,
 ) -> Response {
     let path = req.uri().path().to_string();
-    if state.settings.security.ignore_urls_list().iter().any(|u| is_match(u, &path)) {
+    if state
+        .settings
+        .security
+        .ignore_urls_list()
+        .iter()
+        .any(|u| is_match(u, &path))
+    {
         return next.run(req).await;
     }
 
-    let token = req.headers().get("Authorization")
+    let token = req
+        .headers()
+        .get("Authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .unwrap_or("");
 
     if token.is_empty() {
         tracing::warn!("missing access token for {path}");
-        return error_response(StatusCode::UNAUTHORIZED, ResultCode::AccessTokenInvalid, None);
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            ResultCode::AccessTokenInvalid,
+            None,
+        );
     }
 
     match state.token_manager.parse_token(token).await {
@@ -37,7 +49,11 @@ pub async fn auth_layer(
         }
         None => {
             tracing::warn!("invalid access token for {path}");
-            error_response(StatusCode::UNAUTHORIZED, ResultCode::AccessTokenInvalid, None)
+            error_response(
+                StatusCode::UNAUTHORIZED,
+                ResultCode::AccessTokenInvalid,
+                None,
+            )
         }
     }
 }

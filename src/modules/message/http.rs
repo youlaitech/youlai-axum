@@ -1,6 +1,3 @@
-pub mod manager;
-pub mod topics;
-
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -13,10 +10,10 @@ use axum::{
 use futures::stream::{self, Stream, StreamExt};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::core::state::AppState;
-use crate::framework::security::extractor::AuthUser;
-use crate::framework::sse::manager::{SseEvent, SseGuard};
-use crate::framework::sse::topics::ONLINE_COUNT;
+use crate::modules::auth::extractor::AuthUser;
+use crate::modules::message::hub::{SseEvent, SseGuard};
+use crate::modules::message::topics::ONLINE_COUNT;
+use crate::state::AppState;
 
 /// 包装一层使 guard 随 stream 存活，stream 丢弃时 guard drop 自动清理
 struct GuardedStream<S> {
@@ -37,22 +34,18 @@ pub async fn sse_connect(
     State(state): State<AppState>,
     AuthUser(user): AuthUser,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let (rx, guard) = state.sse.connect(user.user_id).await;
+    let (rx, guard) = state.message_hub.connect(user.user_id).await;
 
     // 连接建立即推送当前在线人数，并通知所有人人数变化
-    let count = state.sse.online_count();
+    let count = state.message_hub.online_count();
     state
-        .sse
+        .message_hub
         .broadcast(ONLINE_COUNT, serde_json::json!(count))
         .await;
 
     // 首条 online-count
     let init = stream::once(async move {
-        Ok::<_, Infallible>(
-            Event::default()
-                .event(ONLINE_COUNT)
-                .data(count.to_string()),
-        )
+        Ok::<_, Infallible>(Event::default().event(ONLINE_COUNT).data(count.to_string()))
     });
 
     // 后续事件流：SseEvent -> axum Event

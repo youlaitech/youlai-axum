@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-/// 扫码登录状态枚举值（与 Java 实现保持一致的字符串）
+/// 扫码登录状态：WAITING → SCANNED → CONFIRMED → LOGGED_IN / CANCELED / EXPIRED
 pub const STATUS_WAITING: &str = "WAITING";
 pub const STATUS_SCANNED: &str = "SCANNED";
 pub const STATUS_CONFIRMED: &str = "CONFIRMED";

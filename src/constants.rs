@@ -1,5 +1,7 @@
 #![allow(dead_code)]
-/// 安全相关常量
+//! 全局常量：角色前缀、Redis key 命名空间、通用开关值。
+
+/// 角色权限前缀 ROLE_，鉴权时去除前缀后匹配权限码（如 ROLE_ADMIN → ADMIN）
 pub const ROLE_PREFIX: &str = "ROLE_";
 pub const ROOT_ROLE_CODE: &str = "ROOT";
 pub const MAX_PAGE_SIZE: i64 = 100;

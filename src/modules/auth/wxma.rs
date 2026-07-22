@@ -6,17 +6,21 @@
 //! 设计要点：网络 I/O（`reqwest` 调微信服务器）与纯逻辑（解析 JSON 响应）分离，
 //! 解析函数抽到模块级纯函数，便于编写离线单测（不连外网即可验证解析正确性）。
 
-use axum::{extract::{Query, State}, routing::post, Json, Router};
+use axum::{
+    extract::{Query, State},
+    routing::post,
+    Json, Router,
+};
 use serde::Deserialize;
 use validator::Validate;
 
-use crate::common::enums::ResultCode;
-use crate::core::config::WxMaConfig;
-use crate::core::state::AppState;
-use crate::framework::web::error::{AppError, AppResult};
-use crate::framework::web::response::Result;
+use crate::config::WxMaConfig;
+use crate::error::{AppError, AppResult};
 use crate::modules::auth::dto::*;
 use crate::modules::auth::service::AuthService;
+use crate::response::Result;
+use crate::result_code::ResultCode;
+use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -80,8 +84,13 @@ async fn phone_login(
     let mobile = get_phone_number(cfg, &req.phone_code).await?;
     let auth = AuthService::new(&state.db, &state.redis, &state.token_manager);
     let user = auth.find_or_create_user_by_mobile(&mobile).await?;
-    auth.bind_wechat_openid(user.id, &session.openid, session.unionid.as_deref(), Some(&session.session_key))
-        .await?;
+    auth.bind_wechat_openid(
+        user.id,
+        &session.openid,
+        session.unionid.as_deref(),
+        Some(&session.session_key),
+    )
+    .await?;
     let token = auth.login_by_mobile(&mobile).await?;
     Ok(Json(Result::success(token)))
 }
@@ -95,15 +104,28 @@ async fn bind_mobile(
     // 校验短信验证码（与 /api/v1/auth/sms/code 发送的 key 一致）
     let key = format!("sms:{}", &req.mobile);
     let mut r = state.redis.clone();
-    let stored: Option<String> = redis::cmd("GET").arg(&key).query_async(&mut r).await.ok().flatten();
+    let stored: Option<String> = redis::cmd("GET")
+        .arg(&key)
+        .query_async(&mut r)
+        .await
+        .ok()
+        .flatten();
     if stored.as_deref() != Some(req.sms_code.as_str()) {
-        return Err(AppError::Business(ResultCode::UserVerificationCodeError, None));
+        return Err(AppError::Business(
+            ResultCode::UserVerificationCodeError,
+            None,
+        ));
     }
-    let _: () = redis::cmd("DEL").arg(&key).query_async(&mut r).await.unwrap_or(());
+    let _: () = redis::cmd("DEL")
+        .arg(&key)
+        .query_async(&mut r)
+        .await
+        .unwrap_or(());
 
     let auth = AuthService::new(&state.db, &state.redis, &state.token_manager);
     let user = auth.find_or_create_user_by_mobile(&req.mobile).await?;
-    auth.bind_wechat_openid(user.id, &req.openid, None, None).await?;
+    auth.bind_wechat_openid(user.id, &req.openid, None, None)
+        .await?;
     let token = auth.login_by_mobile(&req.mobile).await?;
     Ok(Json(Result::success(token)))
 }
@@ -158,10 +180,14 @@ async fn jscode2session(cfg: &WxMaConfig, code: &str) -> AppResult<Jscode2Sessio
     );
     let text = reqwest::get(&url)
         .await
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("微信登录失败：{e}"))))?
+        .map_err(|e| {
+            AppError::Business(ResultCode::SystemError, Some(format!("微信登录失败：{e}")))
+        })?
         .text()
         .await
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("微信登录失败：{e}"))))?;
+        .map_err(|e| {
+            AppError::Business(ResultCode::SystemError, Some(format!("微信登录失败：{e}")))
+        })?;
     parse_jscode2session(&text)
 }
 
@@ -173,10 +199,20 @@ async fn get_phone_number(cfg: &WxMaConfig, phone_code: &str) -> AppResult<Strin
     );
     let token_text = reqwest::get(&token_url)
         .await
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("获取 access_token 失败：{e}"))))?
+        .map_err(|e| {
+            AppError::Business(
+                ResultCode::SystemError,
+                Some(format!("获取 access_token 失败：{e}")),
+            )
+        })?
         .text()
         .await
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("获取 access_token 失败：{e}"))))?;
+        .map_err(|e| {
+            AppError::Business(
+                ResultCode::SystemError,
+                Some(format!("获取 access_token 失败：{e}")),
+            )
+        })?;
     let access_token = parse_access_token(&token_text)?;
 
     let phone_url = format!(
@@ -188,17 +224,31 @@ async fn get_phone_number(cfg: &WxMaConfig, phone_code: &str) -> AppResult<Strin
         .json(&serde_json::json!({ "code": phone_code }))
         .send()
         .await
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("获取手机号失败：{e}"))))?
+        .map_err(|e| {
+            AppError::Business(
+                ResultCode::SystemError,
+                Some(format!("获取手机号失败：{e}")),
+            )
+        })?
         .text()
         .await
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("获取手机号失败：{e}"))))?;
+        .map_err(|e| {
+            AppError::Business(
+                ResultCode::SystemError,
+                Some(format!("获取手机号失败：{e}")),
+            )
+        })?;
     parse_phone_number_resp(&phone_text)
 }
 
 /// 纯函数：解析 `jscode2session` 响应（离线可测）
 fn parse_jscode2session(body: &str) -> AppResult<Jscode2SessionResp> {
-    let resp: Jscode2SessionResp = serde_json::from_str(body)
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("微信响应解析失败：{e}"))))?;
+    let resp: Jscode2SessionResp = serde_json::from_str(body).map_err(|e| {
+        AppError::Business(
+            ResultCode::SystemError,
+            Some(format!("微信响应解析失败：{e}")),
+        )
+    })?;
     if resp.errcode.unwrap_or(0) != 0 {
         return Err(AppError::Business(
             ResultCode::SystemError,
@@ -210,12 +260,19 @@ fn parse_jscode2session(body: &str) -> AppResult<Jscode2SessionResp> {
 
 /// 纯函数：解析 `token` 接口响应，提取 access_token（离线可测）
 fn parse_access_token(body: &str) -> AppResult<String> {
-    let resp: AccessTokenResp = serde_json::from_str(body)
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("微信响应解析失败：{e}"))))?;
+    let resp: AccessTokenResp = serde_json::from_str(body).map_err(|e| {
+        AppError::Business(
+            ResultCode::SystemError,
+            Some(format!("微信响应解析失败：{e}")),
+        )
+    })?;
     if resp.errcode.unwrap_or(0) != 0 {
         return Err(AppError::Business(
             ResultCode::SystemError,
-            Some(format!("获取 access_token 失败：{}", resp.errmsg.unwrap_or_default())),
+            Some(format!(
+                "获取 access_token 失败：{}",
+                resp.errmsg.unwrap_or_default()
+            )),
         ));
     }
     Ok(resp.access_token)
@@ -223,12 +280,19 @@ fn parse_access_token(body: &str) -> AppResult<String> {
 
 /// 纯函数：解析 `getuserphonenumber` 响应，提取手机号（离线可测）
 fn parse_phone_number_resp(body: &str) -> AppResult<String> {
-    let resp: PhoneNumberResp = serde_json::from_str(body)
-        .map_err(|e| AppError::Business(ResultCode::SystemError, Some(format!("微信响应解析失败：{e}"))))?;
+    let resp: PhoneNumberResp = serde_json::from_str(body).map_err(|e| {
+        AppError::Business(
+            ResultCode::SystemError,
+            Some(format!("微信响应解析失败：{e}")),
+        )
+    })?;
     if resp.errcode.unwrap_or(0) != 0 {
         return Err(AppError::Business(
             ResultCode::SystemError,
-            Some(format!("获取手机号失败：{}", resp.errmsg.unwrap_or_default())),
+            Some(format!(
+                "获取手机号失败：{}",
+                resp.errmsg.unwrap_or_default()
+            )),
         ));
     }
     resp.phone_info
@@ -273,7 +337,8 @@ mod tests {
 
     #[test]
     fn parse_phone_number_prefers_phone_number() {
-        let body = r#"{"phone_info":{"phoneNumber":"13800000000","purePhoneNumber":"13800000000"}}"#;
+        let body =
+            r#"{"phone_info":{"phoneNumber":"13800000000","purePhoneNumber":"13800000000"}}"#;
         assert_eq!(parse_phone_number_resp(body).unwrap(), "13800000000");
     }
 

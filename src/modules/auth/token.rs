@@ -1,3 +1,8 @@
+//! JWT 令牌管理：签发、校验、刷新。
+//!
+//! 支持 JWT 无状态模式和 Redis Token 有状态模式，通过 `DynTokenManager` trait object 统一调用。
+//! `create_token_manager()` 按 `security.session.type` 配置选择具体实现。
+
 use crate::config::Settings;
 use crate::constants;
 use crate::modules::auth::principal::{AuthenticationToken, Principal};

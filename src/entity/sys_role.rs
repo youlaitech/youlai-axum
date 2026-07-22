@@ -1,5 +1,5 @@
-use sea_orm::entity::prelude::*;
 use chrono::NaiveDateTime;
+use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
@@ -31,8 +31,20 @@ pub enum Relation {
     SysRoleDept,
 }
 
-impl Related<super::sys_user_role::Entity> for Entity { fn to() -> RelationDef { Relation::SysUserRole.def() } }
-impl Related<super::sys_role_menu::Entity> for Entity { fn to() -> RelationDef { Relation::SysRoleMenu.def() } }
-impl Related<super::sys_role_dept::Entity> for Entity { fn to() -> RelationDef { Relation::SysRoleDept.def() } }
+impl Related<super::sys_user_role::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SysUserRole.def()
+    }
+}
+impl Related<super::sys_role_menu::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SysRoleMenu.def()
+    }
+}
+impl Related<super::sys_role_dept::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SysRoleDept.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

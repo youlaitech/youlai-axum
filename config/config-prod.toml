@@ -1,0 +1,36 @@
+# ============================================================
+# youlai-axum 生产环境配置
+# 仅写与 config.toml（兜底）有差异的项；余下自动继承 config.toml
+# 启动：APP__ENV=prod cargo run
+# ============================================================
+
+[app]
+env = "prod"
+
+[database]
+max_connections = 20
+min_connections = 5
+
+[rate_limit]
+enabled = true
+limit = 300
+window_seconds = 60
+strict_limit = 5
+strict_paths = "/api/v1/auth/login"
+
+[file]
+type = "minio"
+
+[file.minio]
+# 生产 MinIO（实际部署时通过环境变量覆盖）
+
+[file.aliyun]
+# 生产阿里云 OSS（实际部署时覆盖）
+endpoint = "oss-cn-hangzhou.aliyuncs.com"
+access_key_id = "prod_access_key_id"
+access_key_secret = "prod_access_key_secret"
+bucket = "prod-bucket"
+
+[file.local]
+path = "/data/uploads"
+base_url = "/files"

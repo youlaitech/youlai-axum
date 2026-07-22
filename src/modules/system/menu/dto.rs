@@ -12,6 +12,7 @@ pub struct MenuCreate {
     pub route_name: Option<String>,
     pub route_path: Option<String>,
     pub component: Option<String>,
+    pub external_url: Option<String>,
     pub perm: Option<String>,
     pub visible: Option<i16>,
     pub sort: Option<i32>,
@@ -32,11 +33,14 @@ pub struct MenuUpdate {
     pub route_name: Option<String>,
     pub route_path: Option<String>,
     pub component: Option<String>,
+    pub external_url: Option<String>,
     pub perm: Option<String>,
     pub visible: Option<i16>,
     pub sort: Option<i32>,
     pub icon: Option<String>,
     pub redirect: Option<String>,
+    pub keep_alive: Option<i16>,
+    pub always_show: Option<i16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +52,7 @@ pub struct MenuVisibleQuery {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MenuVO {
+    #[serde(serialize_with = "crate::util::i64_to_string")]
     pub id: i64,
     pub parent_id: i64,
     pub name: String,
@@ -55,6 +60,7 @@ pub struct MenuVO {
     pub route_name: Option<String>,
     pub route_path: Option<String>,
     pub component: Option<String>,
+    pub external_url: Option<String>,
     pub perm: Option<String>,
     pub visible: Option<i16>,
     pub sort: Option<i32>,
@@ -86,6 +92,8 @@ pub struct RouteMetaVO {
     pub always_show: bool,
     #[serde(rename = "keepAlive")]
     pub keep_alive: bool,
+    #[serde(rename = "externalUrl")]
+    pub external_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

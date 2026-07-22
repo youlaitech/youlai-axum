@@ -6143,7 +6143,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "youlai-rust"
+name = "youlai-axum"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -6177,6 +6177,7 @@ dependencies = [
  "tokio",
  "tokio-cron-scheduler",
  "tokio-stream",
+ "toml",
  "tower",
  "tower-http",
  "tower_governor",

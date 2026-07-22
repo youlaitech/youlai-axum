@@ -8,18 +8,15 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use redis::aio::ConnectionManager;
 
-use crate::common::enums::ResultCode;
-use crate::core::config::RateLimitConfig;
-use crate::core::state::AppState;
-use crate::framework::web::response::Result;
+use crate::config::RateLimitConfig;
+use crate::error::{AppError, AppResult};
+use crate::response::Result;
+use crate::result_code::ResultCode;
+use crate::state::AppState;
 
-/// 基于 Redis 有序集合的滑动窗口限流 Lua 脚本
-///
-/// - 清理窗口外的历史请求
-/// - 将本次请求以当前毫秒时间戳为 score 加入集合
-/// - 设置键过期时间
-/// - 返回窗口内请求总数
+/// Redis 滑动窗口限流 Lua 脚本（ZSet ZREMRANGEBYSCORE→ZADD→PEXPIRE→ZCARD，一次往返原子完成）
 const SLIDING_WINDOW_LUA: &str = r#"
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -31,11 +28,7 @@ redis.call('PEXPIRE', key, window + 1000)
 return redis.call('ZCARD', key)
 "#;
 
-/// IP 全局限流中间件：按 `客户端IP + 登录用户 + 请求路径` 维度做滑动窗口计数，
-/// 超限返回 429 并在响应头写入 `X-RateLimit-*` 与 `Retry-After`。
-///
-/// 同一 IP 下不同登录用户的配额相互独立，避免某一用户的连发请求把
-/// 共享桶耗光、误伤其它用户的正常调用（如 admin 触发限流影响 new_user）。
+/// IP 全局限流中间件：按 IP + 登录用户 + 请求路径 维度做滑动窗口计数，超限返回 429。
 pub async fn rate_limit_mw(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -53,7 +46,7 @@ pub async fn rate_limit_mw(
     let (limit, window) = choose_limit(cfg, &path);
     let window_ms = window * 1000;
     let now_ms = Utc::now().timestamp_millis() as u64;
-    let key = format!("rate_limiter:ip:{ip}:scope:{scope}:{path}");
+    let key = format!("rate_limit:ip:{ip}:scope:{scope}:{path}");
     let member = uuid::Uuid::new_v4().to_string();
 
     let mut r = state.redis.clone();
@@ -104,9 +97,7 @@ fn build_429(limit: u64, remaining: u64, reset: u64) -> Response {
     )
         .into_response();
     insert_headers(&mut resp, limit, remaining, reset);
-    resp
-        .headers_mut()
-        .insert("Retry-After", hv(reset));
+    resp.headers_mut().insert("Retry-After", hv(reset));
     resp
 }
 
@@ -131,11 +122,7 @@ fn extract_ip(req: &Request, addr: SocketAddr) -> String {
             return first.trim().to_string();
         }
     }
-    if let Some(real) = req
-        .headers()
-        .get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-    {
+    if let Some(real) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
         return real.trim().to_string();
     }
     addr.ip().to_string()
@@ -143,6 +130,10 @@ fn extract_ip(req: &Request, addr: SocketAddr) -> String {
 
 /// 命中严格路径前缀列表时使用更低的阈值，避免高频接口被刷
 fn choose_limit(cfg: &RateLimitConfig, path: &str) -> (u64, u64) {
+    // 短信验证码接口：1 次/60 秒（接口级限流，防刷短信）
+    if path.starts_with("/api/v1/auth/sms/code") {
+        return (1, cfg.window_seconds);
+    }
     let strict: Vec<&str> = cfg
         .strict_paths
         .split(',')
@@ -158,4 +149,36 @@ fn choose_limit(cfg: &RateLimitConfig, path: &str) -> (u64, u64) {
 
 fn hv(n: u64) -> HeaderValue {
     HeaderValue::from_str(&n.to_string()).unwrap()
+}
+
+/// 登录接口按账号限流（5 次/60 秒），防爆破。
+///
+/// 复用 Redis ZSET 滑动窗口（与全局中间件同一 Lua 脚本），但按 username 维度隔离，
+/// 避免同一 IP 下多账号共享计数误伤。
+/// 返回 true 表示放行，false 表示已超限（调用方应返回 A0502）。
+pub async fn login_rate_allowed(redis: &ConnectionManager, username: &str) -> AppResult<bool> {
+    let key = format!("rate_limit:login:{}", username);
+    let window_ms: u64 = 60_000;
+    let limit: u64 = 5;
+    let now_ms = Utc::now().timestamp_millis() as u64;
+    let member = uuid::Uuid::new_v4().to_string();
+    let mut r = redis.clone();
+    let count: i64 = redis::cmd("EVAL")
+        .arg(SLIDING_WINDOW_LUA)
+        .arg(1)
+        .arg(&key)
+        .arg(now_ms)
+        .arg(window_ms)
+        .arg(&member)
+        .query_async(&mut r)
+        .await?;
+    Ok((count as u64) <= limit)
+}
+
+/// 登录超限时返回 A0502
+pub fn login_rate_limited() -> AppError {
+    AppError::Business(
+        ResultCode::RequestConcurrencyLimitExceeded,
+        Some("请求过于频繁，请稍后再试".into()),
+    )
 }

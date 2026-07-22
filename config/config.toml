@@ -68,5 +68,5 @@ limit = 1000
 window_seconds = 60
 # 严格路径在窗口内允许的最大请求数
 strict_limit = 5
-# 需要更严格限流的路径前缀列表（如登录接口，防爆破）
-strict_paths = "/api/v1/auth/login"
+# 需要更严格限流的路径前缀列表（登录改由按账号 5/60s 限流，见 auth::login）
+strict_paths = ""

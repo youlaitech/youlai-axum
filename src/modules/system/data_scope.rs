@@ -1,15 +1,15 @@
 //! 数据权限过滤引擎：ALL（放行）/ DEPT_AND_SUB / DEPT / SELF / CUSTOM
 
-use sea_orm::*;
 use crate::entity;
-use crate::framework::security::model::SecurityUserDetails;
+use crate::modules::auth::principal::Principal;
+use sea_orm::*;
 
 /// 对 SeaORM Select 追加数据权限过滤条件。
 /// 超级管理员或拥有 ALL(1) 权限角色时直接返回原 Select。
 pub async fn apply_data_scope<E: EntityTrait>(
     db: &DatabaseConnection,
     select: Select<E>,
-    user: &SecurityUserDetails,
+    user: &Principal,
     dept_col: E::Column,
     creator_col: E::Column,
 ) -> Select<E>
@@ -66,17 +66,23 @@ where
 async fn get_dept_and_sub_ids(db: &DatabaseConnection, dept_id: i64) -> Vec<i64> {
     let dept = entity::sys_dept::Entity::find_by_id(dept_id)
         .filter(entity::sys_dept::Column::IsDeleted.eq(0))
-        .one(db).await;
-    let Some(dept) = dept.ok().flatten() else { return vec![dept_id]; };
+        .one(db)
+        .await;
+    let Some(dept) = dept.ok().flatten() else {
+        return vec![dept_id];
+    };
 
     // tree_path 格式："0,1"，匹配自身和所有子树节点
     let tree_path = format!("{},{}", dept.tree_path, dept_id);
     entity::sys_dept::Entity::find()
         .filter(entity::sys_dept::Column::IsDeleted.eq(0))
-        .filter(Condition::any()
-            .add(entity::sys_dept::Column::Id.eq(dept_id))
-            .add(entity::sys_dept::Column::TreePath.like(format!("{}%", &tree_path))))
-        .all(db).await
+        .filter(
+            Condition::any()
+                .add(entity::sys_dept::Column::Id.eq(dept_id))
+                .add(entity::sys_dept::Column::TreePath.like(format!("{}%", &tree_path))),
+        )
+        .all(db)
+        .await
         .map(|list| list.iter().map(|d| d.id).collect())
         .unwrap_or_else(|_| vec![dept_id])
 }

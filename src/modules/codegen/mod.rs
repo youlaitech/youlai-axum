@@ -13,10 +13,10 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::core::state::AppState;
-use crate::framework::web::error::{AppError, AppResult};
-use crate::framework::web::response::Result;
+use crate::error::{AppError, AppResult};
 use crate::modules::codegen::service::{CodegenService, ColumnInfo};
+use crate::response::Result;
+use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,7 +79,10 @@ async fn list_tables(State(state): State<AppState>) -> AppResult<Json<Result<Tab
     let tables = CodegenService::new(&state.db).list_tables().await?;
     let list = tables
         .into_iter()
-        .map(|(table_name, table_comment)| TableVO { table_name, table_comment })
+        .map(|(table_name, table_comment)| TableVO {
+            table_name,
+            table_comment,
+        })
         .collect::<Vec<_>>();
     let total = list.len() as u64;
     Ok(Json(Result::success(TableListVO { list, total })))
@@ -98,7 +101,11 @@ async fn get_config(
             column_name: c.name.clone(),
             data_type: c.rust_type.clone(),
             column_comment: c.comment.clone(),
-            is_nullable: if c.is_nullable { "YES".into() } else { "NO".into() },
+            is_nullable: if c.is_nullable {
+                "YES".into()
+            } else {
+                "NO".into()
+            },
             column_key: if c.is_pk { "PRI".into() } else { String::new() },
             is_pk: c.is_pk,
             rust_type: c.rust_type.clone(),
@@ -110,7 +117,7 @@ async fn get_config(
         module_name: meta.module_name.clone(),
         business_name: meta.entity_lower.clone(),
         package_name: "youlai.rust".into(),
-        author: "youlai-rust".into(),
+        author: "youlai-axum".into(),
         columns,
     };
     Ok(Json(Result::success(config)))
@@ -144,8 +151,16 @@ async fn download(
     let resp = axum::response::Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/zip")
-        .header("Content-Disposition", "attachment; filename=\"codegen.zip\"")
+        .header(
+            "Content-Disposition",
+            "attachment; filename=\"codegen.zip\"",
+        )
         .body(axum::body::Body::from(bytes))
-        .map_err(|e| AppError::Business(crate::common::enums::ResultCode::SystemError, Some(e.to_string())))?;
+        .map_err(|e| {
+            AppError::Business(
+                crate::result_code::ResultCode::SystemError,
+                Some(e.to_string()),
+            )
+        })?;
     Ok(resp)
 }

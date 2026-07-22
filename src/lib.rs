@@ -1,8 +1,17 @@
-//! youlai-rust 库入口，导出所有模块供集成测试使用
-#![allow(dead_code, unused_imports, unused_variables)]
+//! youlai-axum 库入口，声明模块树并导出 build_router 与 run
 
-pub mod common;
-pub mod core;
+pub mod app;
+pub mod config;
+pub mod constants;
 pub mod entity;
-pub mod framework;
+pub mod error;
 pub mod modules;
+pub mod openapi;
+pub mod pagination;
+pub mod rate_limit;
+pub mod response;
+pub mod result_code;
+pub mod state;
+pub mod util;
+
+pub use app::{build_router, run};
