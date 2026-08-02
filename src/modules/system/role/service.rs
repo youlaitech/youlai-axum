@@ -44,6 +44,9 @@ impl<'a> RoleService<'a> {
                     create_time: r
                         .create_time
                         .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
+                    update_time: r
+                        .update_time
+                        .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
                     menu_ids: None,
                 })
                 .collect(),
@@ -68,18 +71,24 @@ impl<'a> RoleService<'a> {
             create_time: r
                 .create_time
                 .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
+            update_time: r
+                .update_time
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
             menu_ids: None,
         })
     }
 
     /// 新增角色
     pub async fn create(&self, f: &RoleCreate) -> AppResult<i64> {
+        let now = chrono::Local::now().naive_local();
         Ok(entity::sys_role::ActiveModel {
             name: Set(f.name.clone()),
             code: Set(f.code.clone()),
             sort: Set(f.sort),
             status: Set(f.status.unwrap_or(1)),
             data_scope: Set(f.data_scope),
+            create_time: Set(Some(now)),
+            update_time: Set(Some(now)),
             ..Default::default()
         }
         .insert(self.db)

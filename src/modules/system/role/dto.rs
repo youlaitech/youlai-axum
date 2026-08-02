@@ -61,6 +61,7 @@ pub struct RoleVO {
     pub status: i16,
     pub data_scope: Option<i16>,
     pub create_time: Option<String>,
+    pub update_time: Option<String>,
     pub menu_ids: Option<Vec<i64>>,
 }
 

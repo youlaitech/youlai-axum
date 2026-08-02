@@ -43,7 +43,7 @@ pub async fn sse_connect(
         .broadcast(ONLINE_COUNT, serde_json::json!(count))
         .await;
 
-    // 首条 online-count
+    // 首条 online-users
     let init = stream::once(async move {
         Ok::<_, Infallible>(Event::default().event(ONLINE_COUNT).data(count.to_string()))
     });

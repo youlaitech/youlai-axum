@@ -1,7 +1,7 @@
 //! SSE 事件名常量。
 
 /// 在线用户数，data 为裸 int
-pub const ONLINE_COUNT: &str = "online-count";
+pub const ONLINE_COUNT: &str = "online-users";
 
 /// 字典变更，data 为 {"dictCode": String, "timestamp": i64}
 pub const DICT: &str = "dict";
