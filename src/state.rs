@@ -4,7 +4,7 @@
 
 use crate::config::Settings;
 use crate::modules::auth::token::DynTokenManager;
-use crate::modules::message::hub::MessageHub;
+use crate::modules::sse::hub::MessageHub;
 use redis::aio::ConnectionManager;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;

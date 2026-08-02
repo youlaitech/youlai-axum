@@ -6,7 +6,7 @@ use crate::error::{AppError, AppResult};
 use crate::modules::auth::extractor;
 use crate::modules::auth::extractor::AuthUser;
 use crate::modules::auth::permission::require_perm;
-use crate::modules::message::topics::{NOTICE, NOTICE_REVOKE};
+use crate::modules::sse::topics::{NOTICE, NOTICE_REVOKE};
 use crate::modules::system::notice::dto::*;
 use crate::modules::system::notice::service::NoticeService;
 use crate::response::{PageResult, Result};
@@ -29,20 +29,37 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/v1/notices/my", get(list_my_notices))
         .route("/api/v1/notices/unread-count", get(unread_count))
-        .route(
-            "/api/v1/notices/read-all",
-            put(read_all).route_layer(middleware::from_fn(require_perm("sys:notice:list"))),
-        )
+        .route("/api/v1/notices/read-all", put(read_all))
         .route("/api/v1/notices/{id}/detail", get(get_notice_detail))
-        .route("/api/v1/notices/{id}/form", get(get_notice_form))
-        .route("/api/v1/notices/{id}/publish", put(publish_notice))
-        .route("/api/v1/notices/{id}/revoke", put(revoke_notice))
+        .route(
+            "/api/v1/notices/{id}/form",
+            get(get_notice_form)
+                .route_layer(middleware::from_fn(require_perm("sys:notice:update"))),
+        )
+        .route(
+            "/api/v1/notices/{id}/publish",
+            put(publish_notice)
+                .route_layer(middleware::from_fn(require_perm("sys:notice:publish"))),
+        )
+        .route(
+            "/api/v1/notices/{id}/revoke",
+            put(revoke_notice)
+                .route_layer(middleware::from_fn(require_perm("sys:notice:revoke"))),
+        )
         .route(
             "/api/v1/notices",
             post(create_notice).route_layer(middleware::from_fn(require_perm("sys:notice:create"))),
         )
-        .route("/api/v1/notices/{id}", put(update_notice))
-        .route("/api/v1/notices/{id}", delete(delete_notices))
+        .route(
+            "/api/v1/notices/{id}",
+            put(update_notice)
+                .route_layer(middleware::from_fn(require_perm("sys:notice:update"))),
+        )
+        .route(
+            "/api/v1/notices/{id}",
+            delete(delete_notices)
+                .route_layer(middleware::from_fn(require_perm("sys:notice:delete"))),
+        )
 }
 
 /// 从请求扩展中提取当前登录用户
@@ -133,11 +150,12 @@ async fn get_notice_form(
 
 async fn create_notice(
     State(state): State<AppState>,
+    AuthUser(user): AuthUser,
     Json(f): Json<NoticeCreate>,
 ) -> AppResult<Json<Result<i64>>> {
     f.validate()?;
     Ok(Json(Result::success(
-        NoticeService::new(&state.db).create(&f).await?,
+        NoticeService::new(&state.db).create(&f, user.user_id).await?,
     )))
 }
 

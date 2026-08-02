@@ -13,7 +13,7 @@ use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// 认证 Token 生命周期管理抽象
+/// 认证 Token 的签发、校验、刷新接口
 #[async_trait]
 #[allow(dead_code)]
 pub trait TokenManager: Send + Sync {

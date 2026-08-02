@@ -6,13 +6,14 @@ use std::time::Duration;
 use axum::{
     extract::State,
     response::sse::{Event, KeepAlive, Sse},
+    Json,
 };
 use futures::stream::{self, Stream, StreamExt};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::modules::auth::extractor::AuthUser;
-use crate::modules::message::hub::{SseEvent, SseGuard};
-use crate::modules::message::topics::ONLINE_COUNT;
+use crate::modules::sse::hub::{SseEvent, SseGuard};
+use crate::modules::sse::topics::ONLINE_COUNT;
 use crate::state::AppState;
 
 /// 包装一层使 guard 随 stream 存活，stream 丢弃时 guard drop 自动清理
@@ -69,4 +70,9 @@ pub async fn sse_connect(
             .interval(Duration::from_secs(30))
             .text("ping"),
     )
+}
+
+/// 获取 SSE 在线用户数
+pub async fn online_count(State(state): State<AppState>) -> Json<crate::response::Result<i64>> {
+    Json(crate::response::Result::success(state.message_hub.online_count() as i64))
 }

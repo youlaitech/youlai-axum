@@ -153,7 +153,7 @@ fn hv(n: u64) -> HeaderValue {
 
 /// 登录接口按账号限流（5 次/60 秒），防爆破。
 ///
-/// 复用 Redis ZSET 滑动窗口（与全局中间件同一 Lua 脚本），但按 username 维度隔离，
+/// Redis ZSET 滑动窗口（与全局中间件共用同一 Lua 脚本），按 username 维度隔离，
 /// 避免同一 IP 下多账号共享计数误伤。
 /// 返回 true 表示放行，false 表示已超限（调用方应返回 A0502）。
 pub async fn login_rate_allowed(redis: &ConnectionManager, username: &str) -> AppResult<bool> {

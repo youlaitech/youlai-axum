@@ -11,7 +11,7 @@ use zip::{CompressionMethod, ZipWriter};
 
 use crate::entity::{gen_table, gen_table_column};
 use crate::error::{AppError, AppResult};
-use super::{ColumnVO, GenConfigVO, GenConfigForm, PreviewVO};
+use super::dto::{ColumnVO, GenConfigForm, GenConfigVO, PreviewVO};
 use super::templates;
 use crate::result_code::ResultCode;
 

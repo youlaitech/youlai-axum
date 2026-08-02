@@ -3,7 +3,6 @@
 //! 路由入口 `/api/v1/users`, `/api/v1/roles`, `/api/v1/menus`, `/api/v1/depts` 等。
 
 pub mod config;
-pub mod data_scope;
 pub mod dept;
 pub mod dict;
 pub mod log;

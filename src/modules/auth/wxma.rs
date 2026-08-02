@@ -4,7 +4,7 @@
 //! 查找或创建用户并签发访问令牌。
 //!
 //! 设计要点：网络 I/O（`reqwest` 调微信服务器）与纯逻辑（解析 JSON 响应）分离，
-//! 解析函数抽到模块级纯函数，便于编写离线单测（不连外网即可验证解析正确性）。
+//! 解析函数抽到模块级纯函数，可以不连外网直接单测验证解析正确性。
 
 use axum::{
     extract::{Query, State},
@@ -319,7 +319,7 @@ mod tests {
     fn parse_jscode2session_errcode_returns_error() {
         let body = r#"{"errcode":40029,"errmsg":"invalid code"}"#;
         let err = parse_jscode2session(body).unwrap_err();
-        // 错误信息应透传微信的 errmsg，便于排查
+        // 错误信息透传微信的 errmsg，方便排查
         assert!(format!("{:?}", err).contains("invalid code"));
     }
 

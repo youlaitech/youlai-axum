@@ -1,0 +1,127 @@
+//! 代码生成模块的请求体、查询参数与响应 VO。
+
+use serde::{Deserialize, Serialize};
+
+// ── 查询参数 ──
+
+#[derive(Debug, Deserialize)]
+pub struct PreviewQuery {
+    #[serde(default = "default_page_type")]
+    pub page_type: String,
+    #[serde(rename = "type", default = "default_frontend_type")]
+    pub frontend_type: String,
+}
+
+fn default_page_type() -> String {
+    "classic".into()
+}
+fn default_frontend_type() -> String {
+    "ts".into()
+}
+
+// ── 请求体 ──
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenConfigForm {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub table_name: String,
+    pub business_name: Option<String>,
+    pub module_name: Option<String>,
+    pub package_name: Option<String>,
+    pub entity_name: Option<String>,
+    pub author: Option<String>,
+    pub parent_menu_id: Option<i64>,
+    pub page_type: Option<String>,
+    pub remove_table_prefix: Option<String>,
+    pub field_configs: Option<Vec<FieldConfigForm>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldConfigForm {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub column_name: Option<String>,
+    pub column_type: Option<String>,
+    pub field_name: Option<String>,
+    pub field_sort: Option<i32>,
+    pub field_type: Option<String>,
+    pub field_comment: Option<String>,
+    pub is_show_in_list: Option<i16>,
+    pub is_show_in_form: Option<i16>,
+    pub is_show_in_query: Option<i16>,
+    pub is_required: Option<i16>,
+    pub max_length: Option<i32>,
+    pub form_type: Option<i16>,
+    pub query_type: Option<i16>,
+    pub dict_type: Option<String>,
+}
+
+// ── 响应 VO ──
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableVO {
+    pub table_name: String,
+    pub table_comment: String,
+    pub engine: String,
+    pub create_time: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnVO {
+    pub column_name: String,
+    pub data_type: String,
+    pub column_comment: String,
+    pub is_nullable: String,
+    pub is_pk: bool,
+    pub column_key: String,
+    pub field_name: String,
+    pub field_type: String,
+    pub ts_type: String,
+    pub is_show_in_list: i16,
+    pub is_show_in_form: i16,
+    pub is_show_in_query: i16,
+    pub is_required: i16,
+    pub form_type: Option<i16>,
+    pub query_type: Option<i16>,
+    pub dict_type: Option<String>,
+    pub max_length: Option<i32>,
+    pub field_sort: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableListVO {
+    pub list: Vec<TableVO>,
+    pub total: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewVO {
+    pub path: String,
+    pub file_name: String,
+    pub content: String,
+    pub scope: String,
+    pub language: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenConfigVO {
+    pub id: Option<i64>,
+    pub table_name: String,
+    pub business_name: Option<String>,
+    pub module_name: Option<String>,
+    pub package_name: Option<String>,
+    pub entity_name: String,
+    pub author: Option<String>,
+    pub parent_menu_id: Option<i64>,
+    pub page_type: Option<String>,
+    pub remove_table_prefix: Option<String>,
+    pub field_configs: Vec<ColumnVO>,
+}

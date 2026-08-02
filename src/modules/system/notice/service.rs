@@ -68,7 +68,9 @@ impl<'a> NoticeService<'a> {
             publish_time: r
                 .publish_time
                 .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
-            revoke_time: None,
+            revoke_time: r
+                .revoke_time
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
             create_time: r.create_time.format("%Y-%m-%d %H:%M:%S").to_string().into(),
             is_read: None,
         }
@@ -82,9 +84,6 @@ impl<'a> NoticeService<'a> {
     ) -> NoticeVO {
         let mut vo = self.to_vo(r);
         vo.is_read = Some(un.is_read);
-        vo.revoke_time = r
-            .revoke_time
-            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string());
         vo
     }
 
@@ -99,7 +98,7 @@ impl<'a> NoticeService<'a> {
     }
 
     /// 新增通知公告
-    pub async fn create(&self, f: &NoticeCreate) -> AppResult<i64> {
+    pub async fn create(&self, f: &NoticeCreate, user_id: i64) -> AppResult<i64> {
         Ok(entity::sys_notice::ActiveModel {
             title: Set(Some(f.title.clone())),
             content: Set(f.content.clone()),
@@ -107,7 +106,7 @@ impl<'a> NoticeService<'a> {
             level: Set(f.level.clone()),
             target_type: Set(f.target_type),
             target_user_ids: Set(Self::join_ids(&f.target_user_ids)),
-            create_by: Set(1),
+            create_by: Set(user_id),
             create_time: Set(chrono::Utc::now().naive_utc()),
             ..Default::default()
         }
@@ -133,12 +132,19 @@ impl<'a> NoticeService<'a> {
         Ok(())
     }
 
-    /// 批量删除通知公告（逻辑删除）
+    /// 批量删除通知公告（逻辑删除，同时删除 user_notice 关联记录）
     pub async fn delete(&self, ids: &str) -> AppResult<u64> {
         let ids: Vec<i64> = ids
             .split(',')
             .filter_map(|s| s.trim().parse().ok())
             .collect();
+
+        // 同时删除 user_notice 关联记录
+        entity::sys_user_notice::Entity::delete_many()
+            .filter(entity::sys_user_notice::Column::NoticeId.is_in(ids.clone()))
+            .exec(self.db)
+            .await?;
+
         Ok(sea_orm::Update::many(entity::sys_notice::Entity)
             .col_expr(entity::sys_notice::Column::IsDeleted, Expr::value(1))
             .filter(entity::sys_notice::Column::Id.is_in(ids))

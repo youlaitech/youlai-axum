@@ -20,7 +20,7 @@ const MIN_REMAIN_SECONDS: i64 = 30;
 
 /// 扫码登录服务：状态流转的合法性由 require_status / require_same_user 在写入前拦截，
 /// 非法迁移直接抛业务异常，因此同一 ticket 被多端并发操作时不需要分布式锁。
-/// PC 端换取会话时直接复用 AuthService 的令牌签发，生成的令牌与账号密码登录走同一套会话治理。
+/// PC 端换取会话时调用 AuthService 签发令牌，与账号密码登录使用相同的令牌格式和 Redis 会话存储。
 pub struct QrCodeLoginService<'a> {
     db: &'a DatabaseConnection,
     redis: &'a ConnectionManager,
@@ -130,7 +130,7 @@ impl<'a> QrCodeLoginService<'a> {
         if user.status.unwrap_or_default() != 1 {
             return Err(AppError::Business(ResultCode::AccountFrozen, None));
         }
-        // 复用账号登录的权限组装与令牌签发
+        // 调用账号登录的权限组装与令牌签发
         let auth = AuthService::new(self.db, self.redis, self.token_manager);
         let details = auth.get_principal_by_id(user_id).await?;
         let token = self.token_manager.generate_token(&details).await;

@@ -4,7 +4,7 @@ pub mod service;
 
 use crate::error::AppResult;
 use crate::modules::auth::permission::require_perm;
-use crate::modules::message::topics::DICT;
+use crate::modules::sse::topics::DICT;
 use crate::modules::system::dict::dto::*;
 use crate::modules::system::dict::service::DictService;
 use crate::response::{PageResult, Result};

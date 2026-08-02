@@ -147,13 +147,13 @@ impl<'a> AuthService<'a> {
         })
     }
 
-    /// 按手机号查找或创建用户并签发令牌（微信小程序登录复用）
+    /// 按手机号查找或创建用户并签发令牌
     pub async fn login_by_mobile(&self, mobile: &str) -> AppResult<LoginResp> {
         let user = self.find_or_create_user_by_mobile(mobile).await?;
         self.generate_token_for(&user).await
     }
 
-    /// 按 openid 查找已绑定用户（静默登录复用）
+    /// 按 openid 查找已绑定用户
     pub async fn find_user_by_openid(
         &self,
         openid: &str,
@@ -369,7 +369,7 @@ impl<'a> AuthService<'a> {
         })
     }
 
-    /// 按用户 ID 加载并组装认证详情（扫码登录换发会话令牌复用）
+    /// 按用户 ID 加载认证详情
     pub async fn get_principal_by_id(&self, user_id: i64) -> AppResult<Principal> {
         let user = entity::sys_user::Entity::find_by_id(user_id)
             .filter(entity::sys_user::Column::IsDeleted.eq(0))

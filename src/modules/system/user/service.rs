@@ -30,7 +30,7 @@ impl<'a> UserService<'a> {
             entity::sys_user::Entity::find().filter(entity::sys_user::Column::IsDeleted.eq(0));
 
         // 应用数据权限过滤（根据用户角色 data_scope 限制可见范围）
-        select = crate::modules::system::data_scope::apply_data_scope(
+        select = crate::core::data_scope::apply_data_scope(
             self.db,
             select,
             user,

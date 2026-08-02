@@ -9,7 +9,7 @@ use serde::Serialize;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
-use crate::modules::message::topics::ONLINE_COUNT;
+use crate::modules::sse::topics::ONLINE_COUNT;
 
 /// 一条 SSE 事件：事件名 + JSON 数据
 #[derive(Clone, Debug, Serialize)]
@@ -143,6 +143,6 @@ impl Drop for SseGuard {
     }
 }
 
-/// 心跳保活间隔（供后续扩展，当前由 axum KeepAlive 承担）
+/// 心跳保活间隔（当前由 axum KeepAlive 承担）
 #[allow(dead_code)]
 pub const DEFAULT_HEARTBEAT: Duration = Duration::from_secs(30);
