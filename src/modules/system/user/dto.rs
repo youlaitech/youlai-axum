@@ -57,7 +57,7 @@ pub struct UserStatusQuery {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserPasswordQuery {
+pub struct ResetPasswordForm {
     pub password: String,
 }
 

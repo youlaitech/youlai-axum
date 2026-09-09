@@ -10,13 +10,13 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::modules::file::dto::{DeleteFileQuery, FileInfo};
 use crate::modules::file::service::{
-    delete_minio_object, extract_minio_key, upload_to_minio,
+    delete_s3_object, extract_s3_key, upload_to_s3,
 };
 use crate::response::Result;
 use crate::result_code::ResultCode;
 use crate::state::AppState;
 
-/// 上传文件：按 file.type 走 MinIO 或本地磁盘，统一做扩展名与大小校验
+/// 上传文件：按 file.type 走 S3(RustFS) 或本地磁盘，统一做扩展名与大小校验
 pub async fn upload_file(
     State(state): State<AppState>,
     mut multipart: Multipart,
@@ -73,8 +73,8 @@ pub async fn upload_file(
         let stored_name = format!("{}.{}", Uuid::new_v4(), ext);
         let object_key = format!("{date_dir}/{stored_name}");
 
-        let url = if cfg.r#type == "minio" {
-            upload_to_minio(&cfg.minio, &object_key, data.to_vec(), content_type).await?
+        let url = if cfg.r#type == "s3" {
+            upload_to_s3(&cfg.s3, &object_key, data.to_vec(), content_type).await?
         } else {
             let abs_path = PathBuf::from(&cfg.local.path).join(&object_key);
             if let Some(parent) = abs_path.parent() {
@@ -99,15 +99,15 @@ pub async fn upload_file(
     ))
 }
 
-/// 删除文件：按 file.type 走 MinIO 或本地磁盘
+/// 删除文件：按 file.type 走 S3(RustFS) 或本地磁盘
 pub async fn delete_file(
     State(state): State<AppState>,
     Query(q): Query<DeleteFileQuery>,
 ) -> AppResult<axum::Json<Result<()>>> {
     let cfg = &state.settings.file;
-    if cfg.r#type == "minio" {
-        let key = extract_minio_key(&cfg.minio, &q.file_path);
-        delete_minio_object(&cfg.minio, &key).await?;
+    if cfg.r#type == "s3" {
+        let key = extract_s3_key(&cfg.s3, &q.file_path);
+        delete_s3_object(&cfg.s3, &key).await?;
     } else {
         let rel = q
             .file_path

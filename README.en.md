@@ -150,7 +150,7 @@
 
 1. Clone: `git clone https://github.com/youlaitech/youlai-rust.git`
 
-2. Import database: `psql -U postgres -d youlai_admin -f ../youlai-boot-postgres/sql/youlai_admin.sql`
+2. Import database: `psql -U postgres -d youlai_admin -f sql/youlai_admin.sql`
 
 3. Configure environment: `cp .env.example .env`
 

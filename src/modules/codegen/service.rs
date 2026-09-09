@@ -648,7 +648,7 @@ fn pg_to_rust(udt: &str, _data_type: &str) -> &'static str {
         "int8" | "bigint" => "i64",
         "float4" | "real" => "f32",
         "float8" | "double precision" => "f64",
-        "numeric" | "decimal" => "i64",
+        "numeric" | "decimal" => "f64",
         "bool" | "boolean" => "bool",
         "uuid" => "Uuid",
         "json" | "jsonb" => "JsonValue",

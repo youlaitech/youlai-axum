@@ -13,13 +13,13 @@ strict_limit = 5
 strict_paths = ""
 
 [file]
-type = "minio"
+type = "s3"
 
 [file.upload]
 max_file_size_mb = 50
 allowed_extensions = "jpg,jpeg,png,gif"
 
-[file.minio]
+[file.s3]
 endpoint = "http://111.229.83.153:9000"
 access_key = "bybaddp7zyARpgNbEGKf"
 secret_key = "p9rBdQZPBIJcMH23iyFkZkXmmawbmwPlk3JLlaaj"

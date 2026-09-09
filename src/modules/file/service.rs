@@ -1,15 +1,15 @@
-//! 文件模块的业务逻辑：MinIO（S3 兼容）客户端的构建与对象读写。
+//! 文件模块的业务逻辑：S3（RustFS）客户端的构建与对象读写。
 
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client as S3Client;
 
-use crate::config::FileMinioConfig;
+use crate::config::FileS3Config;
 use crate::error::{AppError, AppResult};
 use crate::result_code::ResultCode;
 
-/// 构建 MinIO（S3 兼容）客户端：路径风格寻址，region 固定占位
-fn build_minio_client(cfg: &FileMinioConfig) -> S3Client {
+/// 构建 S3（RustFS）客户端：路径风格寻址，region 固定占位
+fn build_s3_client(cfg: &FileS3Config) -> S3Client {
     let creds = Credentials::new(
         cfg.access_key.clone(),
         cfg.secret_key.clone(),
@@ -27,14 +27,14 @@ fn build_minio_client(cfg: &FileMinioConfig) -> S3Client {
     S3Client::from_conf(conf)
 }
 
-/// 上传对象到 MinIO，返回可访问 URL（domain 优先，否则用 endpoint）
-pub async fn upload_to_minio(
-    cfg: &FileMinioConfig,
+/// 上传对象到 S3（RustFS），返回可访问 URL（domain 优先，否则用 endpoint）
+pub async fn upload_to_s3(
+    cfg: &FileS3Config,
     object_key: &str,
     data: Vec<u8>,
     content_type: Option<String>,
 ) -> AppResult<String> {
-    let client = build_minio_client(cfg);
+    let client = build_s3_client(cfg);
     ensure_bucket(&client, &cfg.bucket).await?;
 
     let mut req = client
@@ -86,7 +86,7 @@ async fn ensure_bucket(client: &S3Client, bucket: &str) -> AppResult<()> {
 }
 
 /// 从上传返回的 URL 反解出对象 key（去掉 base 与 bucket 前缀）
-pub fn extract_minio_key(cfg: &FileMinioConfig, file_path: &str) -> String {
+pub fn extract_s3_key(cfg: &FileS3Config, file_path: &str) -> String {
     let base = if cfg.domain.trim().is_empty() {
         cfg.endpoint.trim_end_matches('/')
     } else {
@@ -103,9 +103,9 @@ pub fn extract_minio_key(cfg: &FileMinioConfig, file_path: &str) -> String {
     file_path.trim_start_matches('/').to_string()
 }
 
-/// 删除 MinIO 中指定对象 key
-pub async fn delete_minio_object(cfg: &FileMinioConfig, key: &str) -> AppResult<()> {
-    let client = build_minio_client(cfg);
+/// 删除 S3（RustFS）中指定对象 key
+pub async fn delete_s3_object(cfg: &FileS3Config, key: &str) -> AppResult<()> {
+    let client = build_s3_client(cfg);
     client
         .delete_object()
         .bucket(&cfg.bucket)

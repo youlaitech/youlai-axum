@@ -147,10 +147,10 @@ async fn update_user_status(
 async fn reset_user_password(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-    Query(q): Query<UserPasswordQuery>,
+    Json(form): Json<ResetPasswordForm>,
 ) -> AppResult<Json<Result<()>>> {
     UserService::new(&state.db)
-        .reset_password(id, &q.password)
+        .reset_password(id, &form.password)
         .await?;
     Ok(Json(Result::success_empty()))
 }

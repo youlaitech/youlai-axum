@@ -30,13 +30,13 @@ secret_key = "SecretKey012345678901234567890123456789012345678901234567890123456
 allow_multi_login = true
 
 [file]
-type = "minio"
+type = "s3"
 
 [file.upload]
 max_file_size_mb = 50
 allowed_extensions = "jpg,jpeg,png,gif"
 
-[file.minio]
+[file.s3]
 endpoint = "http://111.229.83.153:9000"
 access_key = "bybaddp7zyARpgNbEGKf"
 secret_key = "p9rBdQZPBIJcMH23iyFkZkXmmawbmwPlk3JLlaaj"

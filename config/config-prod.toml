@@ -19,10 +19,10 @@ strict_limit = 5
 strict_paths = "/api/v1/auth/login"
 
 [file]
-type = "minio"
+type = "s3"
 
-[file.minio]
-# 生产 MinIO（实际部署时通过环境变量覆盖）
+[file.s3]
+# 生产 S3（RustFS）（实际部署时通过环境变量覆盖）
 
 [file.aliyun]
 # 生产阿里云 OSS（实际部署时覆盖）

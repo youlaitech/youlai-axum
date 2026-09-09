@@ -1,13 +1,18 @@
 services:
   api:
     build:
-      context: ..
-      dockerfile: docker/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     ports: ["8000:8000"]
-    depends_on: [postgres, redis]
+    depends_on: [postgres, redis, rustfs]
     environment:
       DATABASE__URL: postgres://postgres:123456@postgres:5432/youlai_admin
       REDIS__URL: redis://redis:6379/0
+      FILE__TYPE: s3
+      FILE__S3__ENDPOINT: http://rustfs:9000
+      FILE__S3__ACCESS_KEY: rustfs-admin
+      FILE__S3__SECRET_KEY: rustfs-admin
+      FILE__S3__BUCKET: public
     restart: unless-stopped
 
   postgres:
@@ -18,18 +23,21 @@ services:
     ports: ["5432:5432"]
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ../youlai-boot-postgres/sql/youlai_admin.sql:/docker-entrypoint-initdb.d/init.sql
 
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
 
-  minio:
-    image: minio/minio
+  # RustFS：S3 协议兼容的对象存储服务（MinIO 停止维护后的开源替代）
+  rustfs:
+    image: rustfs/rustfs:latest
     ports: ["9000:9000", "9001:9001"]
     command: server /data --console-address ":9001"
-    volumes: ["minio_data:/data"]
+    environment:
+      RUSTFS_ACCESS_KEY: rustfs-admin
+      RUSTFS_SECRET_KEY: rustfs-admin
+    volumes: ["rustfs_data:/data"]
 
 volumes:
   pg_data:
-  minio_data:
+  rustfs_data:

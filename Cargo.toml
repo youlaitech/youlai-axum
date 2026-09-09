@@ -62,7 +62,7 @@ tower_governor = "0.6"
 calamine = "0.26"
 rust_xlsxwriter = "0.79"
 
-# 对象存储 (MinIO / S3)
+# 对象存储 (S3 / RustFS)
 aws-sdk-s3 = "1"
 aws-config = "1"
 

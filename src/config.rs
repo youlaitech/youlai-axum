@@ -130,18 +130,18 @@ pub struct WxMaConfig {
     pub secret: String,
 }
 
-/// 文件存储配置：支持 MinIO / 阿里云 OSS / 本地磁盘三种后端
+/// 文件存储配置：支持 S3(RustFS) / 阿里云 OSS / 本地磁盘三种后端
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct FileConfig {
-    /// 存储类型：minio | aliyun | local
+    /// 存储类型：s3 | aliyun | local
     #[serde(rename = "type", default = "default_file_type")]
     pub r#type: String,
     /// 上传限制
     #[serde(default)]
     pub upload: FileUploadConfig,
-    /// MinIO 对象存储
+    /// S3(RustFS) 对象存储
     #[serde(default)]
-    pub minio: FileMinioConfig,
+    pub s3: FileS3Config,
     /// 阿里云 OSS 对象存储
     #[serde(default)]
     pub aliyun: FileAliyunConfig,
@@ -170,9 +170,9 @@ impl Default for FileUploadConfig {
     }
 }
 
-/// MinIO 对象存储配置
+/// S3(RustFS) 对象存储配置
 #[derive(Debug, Deserialize, Clone, Default)]
-pub struct FileMinioConfig {
+pub struct FileS3Config {
     /// 服务地址（如 http://host:9000）
     #[serde(default)]
     pub endpoint: String,
@@ -234,7 +234,7 @@ fn default_file_base_url() -> String {
     "/files".into()
 }
 fn default_file_type() -> String {
-    "minio".into()
+    "s3".into()
 }
 fn default_max_file_size_mb() -> u64 {
     50

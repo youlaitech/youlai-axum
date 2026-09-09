@@ -1,4 +1,4 @@
-//! 文件上传/删除模块：支持 MinIO（S3 兼容）与本地磁盘两种后端。
+//! 文件上传/删除模块：支持 S3（RustFS）与本地磁盘两种后端。
 
 pub mod dto;
 pub mod handler;

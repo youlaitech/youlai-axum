@@ -77,7 +77,7 @@
 > **Windows 用户**：Rust 默认使用 MSVC 工具链，需要 Visual Studio Build Tools 中的 C++ 工作负载。下载 [vs_buildtools.exe](https://aka.ms/vs/17/release/vs_buildtools.exe)，安装时勾选「使用 C++ 的桌面开发」，否则会遇到 `linker link.exe not found`。
 
 1. 克隆项目：`git clone https://github.com/youlaitech/youlai-axum.git`
-2. 导入数据库：`psql -U postgres -d youlai_admin -f ../youlai-boot-postgres/sql/youlai_admin.sql`
+2. 导入数据库：`psql -U postgres -d youlai_admin -f sql/youlai_admin.sql`
 3. 配置环境：`cp .env.example .env`
 4. 启动服务：
 
