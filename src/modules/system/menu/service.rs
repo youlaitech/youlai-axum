@@ -37,6 +37,8 @@ impl<'a> MenuService<'a> {
 
     /// 新增菜单
     pub async fn create(&self, f: &MenuCreate) -> AppResult<i64> {
+        self.check_parent(f.parent_id, &f.r#type).await?;
+
         let is_external = f.r#type == "E";
         let is_embedded = is_external && f.component.as_deref() == Some("iframe");
         let needs_route_name = f.r#type == "M" || is_embedded;
@@ -97,21 +99,45 @@ impl<'a> MenuService<'a> {
             external_url: Set(f.external_url.clone()),
             perm: Set(f.perm.clone()),
             visible: Set(f.visible.or(Some(1))),
-            sort: Set(f.sort.or(Some(0))),
+            sort: Set(Some(match f.sort {
+                Some(s) => s,
+                None => self.next_sort(f.parent_id).await?,
+            })),
             icon: Set(f.icon.clone()),
             redirect: Set(f.redirect.clone()),
             keep_alive: Set(f.keep_alive.or(Some(0))),
-            always_show: Set(f.always_show.or(Some(0))),
-            tree_path: Set(Some(tree_path)),
+            tree_path: Set(Some(tree_path.clone())),
             ..Default::default()
         };
-        Ok(a.insert(self.db).await?.id)
+        let id = a.insert(self.db).await?.id;
+
+        // 新增页面菜单时按需生成增删改查按钮
+        if f.generate_crud_buttons.unwrap_or(false) {
+            if let Some(prefix) = f
+                .button_perm_prefix
+                .as_deref()
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+            {
+                let button_tree_path = format!("{},{}", tree_path, id);
+                self.save_crud_buttons(id, prefix, &button_tree_path).await?;
+            }
+        }
+
+        Ok(id)
     }
 
     /// 更新菜单
     pub async fn update(&self, f: &MenuUpdate) -> AppResult<()> {
         if f.parent_id == f.id {
             return Err(AppError::Business(ResultCode::AccessPermissionException, Some("父级菜单不能为当前菜单".into())));
+        }
+
+        // 父级变化时校验层级（父级未变时跳过，兼容历史遗留的非法层级）
+        if let Some(current) = entity::sys_menu::Entity::find_by_id(f.id).one(self.db).await? {
+            if current.parent_id != f.parent_id {
+                self.check_parent(f.parent_id, &f.r#type).await?;
+            }
         }
 
         let mut a: entity::sys_menu::ActiveModel = entity::sys_menu::Entity::find_by_id(f.id)
@@ -160,7 +186,6 @@ impl<'a> MenuService<'a> {
         a.icon = Set(f.icon.clone());
         a.redirect = Set(f.redirect.clone());
         a.keep_alive = Set(f.keep_alive.or(Some(0)));
-        a.always_show = Set(f.always_show.or(Some(0)));
         a.update(self.db).await?;
         Ok(())
     }
@@ -256,13 +281,92 @@ impl<'a> MenuService<'a> {
         Ok(build_route_tree(&all, 0))
     }
 
-    /// 菜单下拉选项（树形）
-    pub async fn get_options(&self) -> AppResult<Vec<MenuOptionVO>> {
-        let all = entity::sys_menu::Entity::find()
+    /// 菜单下拉选项（树形，types 为空查全部）
+    pub async fn get_options(&self, types: Option<Vec<String>>) -> AppResult<Vec<MenuOptionVO>> {
+        let mut select = entity::sys_menu::Entity::find();
+        if let Some(types) = types.filter(|t| !t.is_empty()) {
+            select = select.filter(entity::sys_menu::Column::Type.is_in(types));
+        }
+        let all = select
             .order_by_asc(entity::sys_menu::Column::Sort)
             .all(self.db)
             .await?;
         Ok(build_option_tree(&all, 0))
+    }
+
+    /// 校验上级菜单层级：按钮只能挂在菜单下，其他类型只能挂在顶级或目录下
+    async fn check_parent(&self, parent_id: i64, menu_type: &str) -> AppResult<()> {
+        let is_button = menu_type == "B";
+        if parent_id == 0 {
+            if is_button {
+                return Err(AppError::Business(
+                    ResultCode::AccessPermissionException,
+                    Some("按钮权限只能挂在菜单下".into()),
+                ));
+            }
+            return Ok(());
+        }
+
+        let parent = entity::sys_menu::Entity::find_by_id(parent_id)
+            .one(self.db)
+            .await?
+            .ok_or_else(|| {
+                AppError::Business(
+                    ResultCode::AccessPermissionException,
+                    Some("上级菜单不存在".into()),
+                )
+            })?;
+        let parent_is_menu = parent.r#type == "M";
+        if is_button && !parent_is_menu {
+            return Err(AppError::Business(
+                ResultCode::AccessPermissionException,
+                Some("按钮权限只能挂在菜单下".into()),
+            ));
+        }
+        if !is_button && parent_is_menu {
+            return Err(AppError::Business(
+                ResultCode::AccessPermissionException,
+                Some("菜单下只能挂按钮权限".into()),
+            ));
+        }
+        Ok(())
+    }
+
+    /// 同级菜单的最大排序 + 1
+    async fn next_sort(&self, parent_id: i64) -> AppResult<i32> {
+        let max_sort = entity::sys_menu::Entity::find()
+            .filter(entity::sys_menu::Column::ParentId.eq(parent_id))
+            .order_by_desc(entity::sys_menu::Column::Sort)
+            .one(self.db)
+            .await?
+            .and_then(|m| m.sort);
+        Ok(max_sort.map_or(1, |s| s + 1))
+    }
+
+    /// 生成增删改查按钮权限
+    async fn save_crud_buttons(
+        &self,
+        menu_id: i64,
+        perm_prefix: &str,
+        button_tree_path: &str,
+    ) -> AppResult<()> {
+        let names = ["查询", "新增", "修改", "删除"];
+        let actions = ["list", "create", "update", "delete"];
+        for (i, (name, action)) in names.iter().zip(actions.iter()).enumerate() {
+            entity::sys_menu::ActiveModel {
+                parent_id: Set(menu_id),
+                r#type: Set("B".to_string()),
+                name: Set((*name).to_string()),
+                perm: Set(Some(format!("{perm_prefix}:{action}"))),
+                sort: Set(Some(i as i32 + 1)),
+                visible: Set(Some(1)),
+                tree_path: Set(Some(button_tree_path.to_string())),
+                ..Default::default()
+            }
+            .insert(self.db)
+            .await?;
+        }
+        Ok(())
     }
 }
 
@@ -284,7 +388,6 @@ fn build_menu_tree(all: &[entity::sys_menu::Model], pid: i64) -> Vec<MenuVO> {
             icon: m.icon.clone(),
             redirect: m.redirect.clone(),
             keep_alive: m.keep_alive,
-            always_show: m.always_show,
             children: build_menu_tree(all, m.id),
         })
         .collect()
@@ -306,7 +409,6 @@ fn entity_to_vo(m: &entity::sys_menu::Model) -> MenuVO {
         icon: m.icon.clone(),
         redirect: m.redirect.clone(),
         keep_alive: m.keep_alive,
-        always_show: m.always_show,
         children: vec![],
     }
 }
@@ -335,7 +437,6 @@ fn build_route_tree(all: &[entity::sys_menu::Model], pid: i64) -> Vec<RouteVO> {
                 title: m.name.clone(),
                 icon: m.icon.clone(),
                 hidden: m.visible.unwrap_or(0) != 1,
-                always_show: m.always_show.unwrap_or(0) == 1,
                 keep_alive: m.keep_alive.unwrap_or(0) == 1,
                 external_url: if is_embedded { m.external_url.clone() } else { None },
             },

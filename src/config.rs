@@ -16,7 +16,26 @@ pub struct Settings {
     pub file: FileConfig,
     #[serde(default)]
     pub wx: WxConfig,
+    #[serde(default)]
+    pub ai: AiConfig,
     pub rate_limit: RateLimitConfig,
+}
+
+/// AI 对话配置（配置项 `ai`）
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct AiConfig {
+    /// 是否启用 AI 辅助能力
+    #[serde(default)]
+    pub enabled: bool,
+    /// OpenAI 兼容接口地址（含 /v1）
+    #[serde(default)]
+    pub base_url: String,
+    /// API 密钥
+    #[serde(default)]
+    pub api_key: String,
+    /// 对话模型名称
+    #[serde(default)]
+    pub model: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

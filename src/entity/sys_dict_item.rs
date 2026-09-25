@@ -20,6 +20,8 @@ pub struct Model {
     pub create_by: Option<i64>,
     pub update_time: Option<NaiveDateTime>,
     pub update_by: Option<i64>,
+    #[sea_orm(default_value = 0)]
+    pub is_deleted: i16,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -15,6 +15,7 @@ use crate::modules::auth::routes as auth_routes;
 use crate::modules::auth::token::create_token_manager;
 use crate::modules::codegen::routes as codegen_routes;
 use crate::modules::file::routes as file_routes;
+use crate::modules::form::routes as form_routes;
 use crate::modules::sse::hub::MessageHub;
 use crate::modules::sse::routes as sse_routes;
 use crate::modules::system::routes as system_routes;
@@ -55,6 +56,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(system_routes())
         .merge(sse_routes())
         .merge(file_routes())
+        .merge(form_routes())
         .merge(codegen_routes())
         .merge(swagger_ui())
         .layer(axum::middleware::from_fn_with_state(

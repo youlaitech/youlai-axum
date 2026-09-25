@@ -19,7 +19,11 @@ pub struct MenuCreate {
     pub icon: Option<String>,
     pub redirect: Option<String>,
     pub keep_alive: Option<i16>,
-    pub always_show: Option<i16>,
+    /// 新增页面菜单时是否生成增删改查按钮
+    #[serde(default)]
+    pub generate_crud_buttons: Option<bool>,
+    /// 按钮权限标识前缀，如 sys:user
+    pub button_perm_prefix: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -40,7 +44,6 @@ pub struct MenuUpdate {
     pub icon: Option<String>,
     pub redirect: Option<String>,
     pub keep_alive: Option<i16>,
-    pub always_show: Option<i16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,7 +70,6 @@ pub struct MenuVO {
     pub icon: Option<String>,
     pub redirect: Option<String>,
     pub keep_alive: Option<i16>,
-    pub always_show: Option<i16>,
     pub children: Vec<MenuVO>,
 }
 
@@ -88,8 +90,6 @@ pub struct RouteMetaVO {
     pub title: String,
     pub icon: Option<String>,
     pub hidden: bool,
-    #[serde(rename = "alwaysShow")]
-    pub always_show: bool,
     #[serde(rename = "keepAlive")]
     pub keep_alive: bool,
     #[serde(rename = "externalUrl")]

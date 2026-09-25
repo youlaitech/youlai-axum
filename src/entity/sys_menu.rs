@@ -18,8 +18,6 @@ pub struct Model {
     pub perm: Option<String>,
     pub external_url: Option<String>,
     #[sea_orm(default_value = 0)]
-    pub always_show: Option<i16>,
-    #[sea_orm(default_value = 0)]
     pub keep_alive: Option<i16>,
     #[sea_orm(default_value = 1)]
     pub visible: Option<i16>,

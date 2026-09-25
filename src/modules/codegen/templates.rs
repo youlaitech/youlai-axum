@@ -848,7 +848,7 @@ onMounted(() => {
 
 /// 渲染全部模板（后端 Rust + 前端 Vue3）
 ///
-/// `page_type`: "classic" | "curd"
+/// `page_type`: "classic" | "crud"
 /// `frontend_type`: "ts" | "js"
 pub fn render(meta: &TableMeta, _page_type: &str, frontend_type: &str) -> anyhow::Result<Vec<GeneratedFile>> {
     let mut out = Vec::new();

@@ -10,7 +10,7 @@ use crate::modules::system::menu::service::MenuService;
 use crate::response::Result;
 use crate::state::AppState;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, RawQuery, State},
     middleware,
     routing::{get, patch, post, put},
     Json, Router,
@@ -105,8 +105,34 @@ async fn get_routes(
 /// 获取菜单下拉选项
 async fn list_menu_options(
     State(state): State<AppState>,
+    RawQuery(raw): RawQuery,
 ) -> AppResult<Json<Result<Vec<MenuOptionVO>>>> {
+    let types = parse_types_param(raw.as_deref());
     Ok(Json(Result::success(
-        MenuService::new(&state.db).get_options().await?,
+        MenuService::new(&state.db).get_options(types).await?,
     )))
+}
+
+/// 解析 types 查询参数：支持 `types=C,M` 与重复键 `types=C&types=M`
+fn parse_types_param(raw: Option<&str>) -> Option<Vec<String>> {
+    let mut types: Vec<String> = Vec::new();
+    for pair in raw?.split('&') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        if key != "types" {
+            continue;
+        }
+        for item in value.split(',') {
+            let item = item.trim();
+            if !item.is_empty() && !types.iter().any(|t| t == item) {
+                types.push(item.to_string());
+            }
+        }
+    }
+    if types.is_empty() {
+        None
+    } else {
+        Some(types)
+    }
 }

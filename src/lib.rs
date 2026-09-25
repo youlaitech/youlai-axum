@@ -1,5 +1,6 @@
 //! youlai-axum 库入口，声明模块树并导出 build_router 与 run
 
+pub mod ai;
 pub mod app;
 pub mod config;
 pub mod constants;
