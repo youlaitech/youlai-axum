@@ -15,7 +15,7 @@ min_connections = 5
 url = "redis://:123456@www.youlai.tech:6379/0"
 
 [security]
-ignore_urls = "/api/v1/auth/login/**,/api/v1/auth/captcha,/api/v1/auth/sms/code,/api/v1/auth/refresh-token,/api/v1/auth/qr-code/generate,/api/v1/auth/qr-code/status,/api/v1/auth/qr-code/login,/api/v1/wxma/auth/**,/doc.html,/swagger-ui,/swagger-ui/*,/openapi.json"
+ignore_urls = "/api/v1/auth/login/**,/api/v1/auth/captcha,/api/v1/auth/sms/code,/api/v1/auth/refresh-token,/api/v1/auth/qr-code/generate,/api/v1/auth/qr-code/status,/api/v1/auth/qr-code/login,/api/v1/wxma/auth/**,/doc.html,/swagger-ui,/swagger-ui/*,/openapi.json,/api/v1/forms/public/**"
 unsecured_urls = ""
 
 [security.session]
@@ -58,6 +58,16 @@ starttls = true
 [wx.miniapp]
 appid = ""
 secret = ""
+
+[ai]
+# 是否启用 AI 辅助能力
+enabled = false
+# OpenAI 兼容接口地址（含 /v1）
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# API 密钥
+api_key = ""
+# 对话模型名称
+model = "qwen-plus"
 
 [rate_limit]
 # 是否启用全局 IP 限流中间件
