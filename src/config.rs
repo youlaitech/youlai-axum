@@ -297,8 +297,7 @@ impl Settings {
     /// 环境通过 `APP__ENV` 或 `APP_ENV` 指定，默认 `dev`。
     /// 例：`APP__ENV=prod cargo run` → 依次加载 config.toml + config-dev.toml + config-prod.toml
     ///
-    /// 注意：未使用 figment 的 merge 链（figment 0.10 在 Windows 上 merge 行为异常），
-    /// 改为手动深合并 toml::Table 后再反序列化。
+    /// 手动深合并 TOML 文件后反序列化
     pub fn load() -> anyhow::Result<Self> {
         let profile = std::env::var("APP__ENV")
             .or_else(|_| std::env::var("APP_ENV"))

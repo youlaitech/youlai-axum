@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use validator::Validate;
 pub mod dto;
 pub mod service;
@@ -23,6 +24,7 @@ pub fn routes() -> Router<AppState> {
             get(list_menus).route_layer(middleware::from_fn(require_perm("sys:menu:list"))),
         )
         .route("/api/v1/menus/options", get(list_menu_options))
+        .route("/api/v1/menus/ai-fill", post(ai_fill_menu))
         .route("/api/v1/menus/routes", get(get_routes))
         .route(
             "/api/v1/menus",
@@ -99,6 +101,22 @@ async fn get_routes(
 ) -> AppResult<Json<Result<Vec<RouteVO>>>> {
     Ok(Json(Result::success(
         MenuService::new(&state.db).get_routes(&user).await?,
+    )))
+}
+
+/// AI 调用用的 HTTP 客户端
+static HTTP: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
+
+/// AI 推断菜单的访问路径与权限标识
+async fn ai_fill_menu(
+    State(state): State<AppState>,
+    Json(f): Json<MenuAiFillForm>,
+) -> AppResult<Json<Result<MenuAiFillVO>>> {
+    f.validate()?;
+    Ok(Json(Result::success(
+        MenuService::new(&state.db)
+            .ai_fill(&HTTP, &state.settings.ai, &f)
+            .await?,
     )))
 }
 

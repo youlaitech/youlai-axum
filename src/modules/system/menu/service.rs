@@ -1,5 +1,7 @@
 //! 菜单管理服务：树形查询、路由生成
 
+use crate::ai;
+use crate::config::AiConfig;
 use crate::entity;
 use crate::error::{AppError, AppResult};
 use crate::modules::auth::principal::Principal;
@@ -7,6 +9,31 @@ use crate::modules::system::menu::dto::*;
 use crate::result_code::ResultCode;
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
+
+/// AI 系统提示词名称
+const MENU_SYSTEM_PROMPT_PATH: &str = "menu/system.md";
+/// 同级菜单取样条数，样本只用于让模型沿用既有命名风格
+const SIBLING_SAMPLE_LIMIT: u64 = 10;
+
+/// 菜单类型取中文名称，无匹配时沿用原值
+fn menu_type_label(menu_type: Option<&str>) -> String {
+    match menu_type.unwrap_or("") {
+        "C" => "目录".to_string(),
+        "M" => "菜单".to_string(),
+        "E" => "外链".to_string(),
+        "B" => "按钮".to_string(),
+        "" => "未指定".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// 值为空时取默认文案
+fn blank_default(value: Option<&str>, fallback: &str) -> String {
+    value
+        .filter(|item| !item.trim().is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
 
 pub struct MenuService<'a> {
     db: &'a DatabaseConnection,
@@ -200,23 +227,33 @@ impl<'a> MenuService<'a> {
         Ok(())
     }
 
-    /// 删除菜单（检查子节点），并清理角色关联
+    /// 删除菜单（级联删除子菜单）并清理角色关联
     pub async fn delete(&self, id: i64) -> AppResult<()> {
-        let children = entity::sys_menu::Entity::find()
-            .filter(entity::sys_menu::Column::ParentId.eq(id))
-            .count(self.db)
+        // 级联范围：自身 + tree_path 祖先链里带上该菜单ID的后代
+        let ids: Vec<i64> = entity::sys_menu::Entity::find()
+            .select_only()
+            .column(entity::sys_menu::Column::Id)
+            .filter(
+                Condition::any()
+                    .add(entity::sys_menu::Column::Id.eq(id))
+                    .add(entity::sys_menu::Column::TreePath.like(format!("{id},%")))
+                    .add(entity::sys_menu::Column::TreePath.like(format!("%,{id},%")))
+                    .add(entity::sys_menu::Column::TreePath.like(format!("%,{id}"))),
+            )
+            .into_tuple()
+            .all(self.db)
             .await?;
-        if children > 0 {
-            return Err(AppError::Business(
-                ResultCode::AccessPermissionException,
-                Some("存在子菜单，无法删除".into()),
-            ));
+
+        if ids.is_empty() {
+            return Err(AppError::Business(ResultCode::DataNotFound, None));
         }
-        entity::sys_menu::Entity::delete_by_id(id)
+
+        entity::sys_role_menu::Entity::delete_many()
+            .filter(entity::sys_role_menu::Column::MenuId.is_in(ids.clone()))
             .exec(self.db)
             .await?;
-        entity::sys_role_menu::Entity::delete_many()
-            .filter(entity::sys_role_menu::Column::MenuId.eq(id))
+        entity::sys_menu::Entity::delete_many()
+            .filter(entity::sys_menu::Column::Id.is_in(ids))
             .exec(self.db)
             .await?;
         Ok(())
@@ -367,6 +404,76 @@ impl<'a> MenuService<'a> {
             .await?;
         }
         Ok(())
+    }
+
+    /// 用 AI 推断菜单的访问路径、权限标识与图标，命名风格参照同级菜单
+    pub async fn ai_fill(
+        &self,
+        http: &reqwest::Client,
+        ai_config: &AiConfig,
+        f: &MenuAiFillForm,
+    ) -> AppResult<MenuAiFillVO> {
+        let system_prompt = ai::prompt(MENU_SYSTEM_PROMPT_PATH)?;
+        let user_prompt = self.build_ai_user_prompt(f).await?;
+        let value = ai::chat_json_list(http, ai_config, system_prompt, &user_prompt).await?;
+
+        let icon_keywords = value["iconKeywords"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(MenuAiFillVO {
+            route_path: value["routePath"].as_str().map(str::to_string),
+            perm: value["perm"].as_str().map(str::to_string),
+            icon_keywords,
+        })
+    }
+
+    /// 构造用户提示词，附带同级菜单样本供模型沿用既有命名风格
+    async fn build_ai_user_prompt(&self, f: &MenuAiFillForm) -> AppResult<String> {
+        let parent_id = f.parent_id.unwrap_or(0);
+
+        let parent_name = if parent_id > 0 {
+            entity::sys_menu::Entity::find_by_id(parent_id)
+                .one(self.db)
+                .await?
+                .map(|menu| menu.name)
+                .unwrap_or_else(|| "顶级".to_string())
+        } else {
+            "顶级".to_string()
+        };
+
+        let siblings = entity::sys_menu::Entity::find()
+            .filter(entity::sys_menu::Column::ParentId.eq(parent_id))
+            .order_by_asc(entity::sys_menu::Column::Sort)
+            .limit(SIBLING_SAMPLE_LIMIT)
+            .all(self.db)
+            .await?;
+
+        let mut text = String::new();
+        text.push_str(&format!("菜单名称：{}\n", f.name));
+        text.push_str(&format!("菜单类型：{}\n", menu_type_label(f.r#type.as_deref())));
+        text.push_str(&format!("上级菜单：{parent_name}\n"));
+        text.push_str("同级菜单示例：\n");
+        if siblings.is_empty() {
+            text.push_str("（无）\n");
+        } else {
+            for menu in siblings {
+                text.push_str(&format!(
+                    "- {}（类型 {}，路径片段 {}，权限 {}）\n",
+                    menu.name,
+                    menu_type_label(Some(menu.r#type.as_str())),
+                    blank_default(menu.route_path.as_deref(), "无"),
+                    blank_default(menu.perm.as_deref(), "无"),
+                ));
+            }
+        }
+        Ok(text)
     }
 }
 

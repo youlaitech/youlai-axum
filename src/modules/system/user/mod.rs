@@ -32,10 +32,7 @@ pub fn routes() -> Router<AppState> {
             get(get_user_profile).put(update_user_profile),
         )
         .route("/api/v1/users/password", put(change_password))
-        .route(
-            "/api/v1/users/options",
-            get(list_user_options).route_layer(middleware::from_fn(require_perm("sys:user:query"))),
-        )
+        .route("/api/v1/users/options", get(list_user_options))
         .route("/api/v1/users/mobile/code", post(send_mobile_code))
         .route(
             "/api/v1/users/mobile",
@@ -48,7 +45,7 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/users/import", post(import_users))
         .route(
             "/api/v1/users/{id}/form",
-            get(get_user_form).route_layer(middleware::from_fn(require_perm("sys:user:query"))),
+            get(get_user_form).route_layer(middleware::from_fn(require_perm("sys:user:update"))),
         )
         .route("/api/v1/users/{id}/status", patch(update_user_status))
         .route(

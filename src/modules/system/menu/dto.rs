@@ -52,6 +52,26 @@ pub struct MenuVisibleQuery {
     pub visible: i16,
 }
 
+/// AI 推断菜单配置入参
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuAiFillForm {
+    #[validate(length(min = 1, max = 64))]
+    pub name: String,
+    pub r#type: Option<String>,
+    /// 上级菜单ID，用于参考同级菜单的命名风格
+    pub parent_id: Option<i64>,
+}
+
+/// AI 推断的菜单配置
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuAiFillVO {
+    pub route_path: Option<String>,
+    pub perm: Option<String>,
+    pub icon_keywords: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MenuVO {
