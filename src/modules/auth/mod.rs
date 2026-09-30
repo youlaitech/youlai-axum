@@ -29,7 +29,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/auth/captcha", get(get_captcha))
         .route("/api/v1/auth/login", post(login))
-        .route("/api/v1/auth/login/sms", post(login_by_sms))
+        .route("/api/v1/auth/sms/login", post(login_by_sms))
         .route("/api/v1/auth/sms/code", post(send_sms_code))
         .route("/api/v1/auth/logout", delete(logout))
         .route("/api/v1/auth/refresh-token", post(refresh_token))

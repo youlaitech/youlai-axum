@@ -35,20 +35,14 @@ pub struct RoleUpdate {
     pub sort: Option<i32>,
     pub status: Option<i16>,
     pub data_scope: Option<i16>,
+    #[serde(rename = "deptIds")]
+    pub dept_ids: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RoleStatusQuery {
     pub status: i16,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DataScopeForm {
-    pub data_scope: i16,
-    #[serde(rename = "deptIds")]
-    pub dept_ids: Option<Vec<i64>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,5 +63,12 @@ pub struct RoleVO {
 #[serde(rename_all = "camelCase")]
 pub struct RoleOptionVO {
     pub value: i64,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleCodeOptionVO {
+    pub value: String,
     pub label: String,
 }

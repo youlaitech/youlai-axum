@@ -319,7 +319,10 @@ impl Settings {
             deep_merge(&mut base, &prod);
         }
 
-        // 2) 从合并后的 TOML 直接反序列化（绕过 figment）
+        // 2) 环境变量覆盖：双下划线分隔层级（如 FILE__S3__ENDPOINT），便于容器注入
+        apply_env_overrides(&mut base);
+
+        // 3) 从合并后的 TOML 直接反序列化（绕过 figment）
         Ok(toml::from_str(&toml::to_string(&base)?)?)
     }
 
@@ -338,4 +341,46 @@ fn deep_merge(base: &mut toml::Table, overlay: &toml::Table) {
             }
         }
     }
+}
+
+/// 环境变量覆盖：双下划线分隔层级（FILE__S3__ENDPOINT → file.s3.endpoint）
+fn apply_env_overrides(table: &mut toml::Table) {
+    for (key, value) in std::env::vars() {
+        let segments: Vec<String> = key.split("__").map(|s| s.to_lowercase()).collect();
+        if segments.len() < 2 || segments.iter().any(|s| s.is_empty()) {
+            continue;
+        }
+        insert_path(table, &segments, parse_env_value(&value));
+    }
+}
+
+/// 按层级写入嵌套表，父级不存在或不是表时重建
+fn insert_path(table: &mut toml::Table, path: &[String], value: toml::Value) {
+    if path.len() == 1 {
+        table.insert(path[0].clone(), value);
+        return;
+    }
+    let entry = table
+        .entry(path[0].clone())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    if !entry.is_table() {
+        *entry = toml::Value::Table(toml::Table::new());
+    }
+    if let toml::Value::Table(child) = entry {
+        insert_path(child, &path[1..], value);
+    }
+}
+
+/// 环境变量字符串按 TOML 标量解析：true/false → 布尔，整数 → 整数，其余按字符串
+fn parse_env_value(value: &str) -> toml::Value {
+    if value.eq_ignore_ascii_case("true") {
+        return toml::Value::Boolean(true);
+    }
+    if value.eq_ignore_ascii_case("false") {
+        return toml::Value::Boolean(false);
+    }
+    if let Ok(int) = value.parse::<i64>() {
+        return toml::Value::Integer(int);
+    }
+    toml::Value::String(value.to_string())
 }

@@ -11,7 +11,7 @@ use crate::state::AppState;
 use axum::{
     extract::{Path, Query, State},
     middleware,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 
@@ -32,7 +32,11 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/configs/{id}/form", get(get_config_form))
         .route(
             "/api/v1/configs/{id}",
-            put(update_config).delete(delete_config),
+            put(update_config).route_layer(middleware::from_fn(require_perm("sys:config:update"))),
+        )
+        .route(
+            "/api/v1/configs/{id}",
+            delete(delete_config).route_layer(middleware::from_fn(require_perm("sys:config:delete"))),
         )
 }
 

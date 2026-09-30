@@ -11,7 +11,7 @@ use crate::state::AppState;
 use axum::{
     extract::{Path, Query, State},
     middleware,
-    routing::{delete, get, patch, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 
@@ -22,14 +22,18 @@ pub fn routes() -> Router<AppState> {
             get(list_roles).route_layer(middleware::from_fn(require_perm("sys:role:list"))),
         )
         .route("/api/v1/roles/options", get(list_role_options))
+        .route("/api/v1/roles/code-options", get(list_role_code_options))
         .route(
             "/api/v1/roles",
             post(create_role).route_layer(middleware::from_fn(require_perm("sys:role:create"))),
         )
-        .route("/api/v1/roles/{id}/form", get(get_role_form))
+        .route(
+            "/api/v1/roles/{id}/form",
+            get(get_role_form).route_layer(middleware::from_fn(require_perm("sys:role:update"))),
+        )
         .route(
             "/api/v1/roles/{id}/status",
-            patch(update_role_status)
+            put(update_role_status)
                 .route_layer(middleware::from_fn(require_perm("sys:role:update"))),
         )
         .route("/api/v1/roles/{id}/menu-ids", get(get_role_menu_ids))
@@ -38,10 +42,19 @@ pub fn routes() -> Router<AppState> {
             put(assign_role_menus)
                 .route_layer(middleware::from_fn(require_perm("sys:role:assign"))),
         )
-        .route("/api/v1/roles/{id}/dept-ids", get(get_role_dept_ids))
-        .route("/api/v1/roles/{id}/data-scope", put(update_data_scope))
-        .route("/api/v1/roles/{id}", put(update_role))
-        .route("/api/v1/roles/{id}", delete(delete_roles))
+        .route(
+            "/api/v1/roles/{id}/dept-ids",
+            get(get_role_dept_ids)
+                .route_layer(middleware::from_fn(require_perm("sys:role:update"))),
+        )
+        .route(
+            "/api/v1/roles/{id}",
+            put(update_role).route_layer(middleware::from_fn(require_perm("sys:role:update"))),
+        )
+        .route(
+            "/api/v1/roles/{id}",
+            delete(delete_roles).route_layer(middleware::from_fn(require_perm("sys:role:delete"))),
+        )
 }
 
 /// 分页查询角色列表
@@ -141,23 +154,20 @@ async fn get_role_dept_ids(
     )))
 }
 
-/// 更新角色数据权限范围
-async fn update_data_scope(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(f): Json<DataScopeForm>,
-) -> AppResult<Json<Result<()>>> {
-    RoleService::new(&state.db)
-        .update_data_scope(id, &f)
-        .await?;
-    Ok(Json(Result::success_empty()))
-}
-
 /// 获取角色下拉选项
 async fn list_role_options(
     State(state): State<AppState>,
 ) -> AppResult<Json<Result<Vec<RoleOptionVO>>>> {
     Ok(Json(Result::success(
         RoleService::new(&state.db).get_options().await?,
+    )))
+}
+
+/// 获取角色编码下拉选项
+async fn list_role_code_options(
+    State(state): State<AppState>,
+) -> AppResult<Json<Result<Vec<RoleCodeOptionVO>>>> {
+    Ok(Json(Result::success(
+        RoleService::new(&state.db).get_code_options().await?,
     )))
 }

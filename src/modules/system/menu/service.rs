@@ -464,11 +464,13 @@ impl<'a> MenuService<'a> {
             text.push_str("（无）\n");
         } else {
             for menu in siblings {
+                // 示例路径只展示当前这一级的路径片段
+                let route_path = menu.route_path.as_deref().unwrap_or("").trim_start_matches('/');
                 text.push_str(&format!(
                     "- {}（类型 {}，路径片段 {}，权限 {}）\n",
                     menu.name,
                     menu_type_label(Some(menu.r#type.as_str())),
-                    blank_default(menu.route_path.as_deref(), "无"),
+                    blank_default(Some(route_path), "无"),
                     blank_default(menu.perm.as_deref(), "无"),
                 ));
             }
@@ -545,7 +547,7 @@ fn build_route_tree(all: &[entity::sys_menu::Model], pid: i64) -> Vec<RouteVO> {
                 icon: m.icon.clone(),
                 hidden: m.visible.unwrap_or(0) != 1,
                 keep_alive: m.keep_alive.unwrap_or(0) == 1,
-                external_url: if is_embedded { m.external_url.clone() } else { None },
+                external_url: if is_external { m.external_url.clone() } else { None },
             },
             children: build_route_tree(all, m.id),
             }

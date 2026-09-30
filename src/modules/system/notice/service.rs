@@ -333,13 +333,4 @@ impl<'a> NoticeService<'a> {
         Ok(())
     }
 
-    /// 当前用户未读通知数量
-    pub async fn unread_count(&self, user_id: i64) -> AppResult<i64> {
-        let n = entity::sys_user_notice::Entity::find()
-            .filter(entity::sys_user_notice::Column::UserId.eq(user_id))
-            .filter(entity::sys_user_notice::Column::IsRead.eq(0))
-            .count(self.db)
-            .await?;
-        Ok(n as i64)
-    }
 }

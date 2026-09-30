@@ -59,6 +59,12 @@ pub struct FieldConfigForm {
     pub dict_type: Option<String>,
 }
 
+/// AI 填充生成配置入参
+#[derive(Debug, Deserialize)]
+pub struct AiFillConfigForm {
+    pub requirement: Option<String>,
+}
+
 // ── 响应 VO ──
 
 #[derive(Debug, Serialize)]

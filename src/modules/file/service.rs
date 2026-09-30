@@ -59,8 +59,17 @@ pub async fn upload_to_s3(
 
 /// 存储桶不存在则创建，并赋予公共读策略（使返回的直链可匿名访问）
 async fn ensure_bucket(client: &S3Client, bucket: &str) -> AppResult<()> {
-    if client.head_bucket().bucket(bucket).send().await.is_ok() {
-        return Ok(());
+    match client.head_bucket().bucket(bucket).send().await {
+        Ok(_) => return Ok(()),
+        Err(e) => {
+            // 仅桶不存在（404）时继续创建，其余错误（如权限不足）原样返回
+            if e.raw_response().map(|r| r.status().as_u16()) != Some(404) {
+                return Err(AppError::Business(
+                    ResultCode::UploadFileException,
+                    Some(format!("检查存储桶失败: {e}")),
+                ));
+            }
+        }
     }
     client
         .create_bucket()
@@ -76,17 +85,22 @@ async fn ensure_bucket(client: &S3Client, bucket: &str) -> AppResult<()> {
     let policy = format!(
         r#"{{"Version":"2012-10-17","Statement":[{{"Effect":"Allow","Principal":{{"AWS":["*"]}},"Action":["s3:GetObject"],"Resource":["arn:aws:s3:::{bucket}/*"]}}]}}"#
     );
-    let _ = client
+    if let Err(e) = client
         .put_bucket_policy()
         .bucket(bucket)
         .policy(policy)
         .send()
-        .await;
+        .await
+    {
+        tracing::warn!("设置存储桶公共读策略失败: {e}");
+    }
     Ok(())
 }
 
 /// 从上传返回的 URL 反解出对象 key（去掉 base 与 bucket 前缀）
 pub fn extract_s3_key(cfg: &FileS3Config, file_path: &str) -> String {
+    // 签名 query 不属于对象 key
+    let file_path = file_path.split('?').next().unwrap_or(file_path);
     let base = if cfg.domain.trim().is_empty() {
         cfg.endpoint.trim_end_matches('/')
     } else {

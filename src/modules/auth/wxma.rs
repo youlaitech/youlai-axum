@@ -24,9 +24,9 @@ use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/v1/wxma/auth/silent-login", post(silent_login))
-        .route("/api/v1/wxma/auth/phone-login", post(phone_login))
-        .route("/api/v1/wxma/auth/bind-mobile", post(bind_mobile))
+        .route("/api/v1/auth/wxma/silent-login", post(silent_login))
+        .route("/api/v1/auth/wxma/phone-login", post(phone_login))
+        .route("/api/v1/auth/wxma/bind-mobile", post(bind_mobile))
 }
 
 #[derive(Debug, Deserialize)]

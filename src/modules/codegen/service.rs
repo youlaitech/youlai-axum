@@ -75,6 +75,120 @@ struct RawColumn {
     is_pk: bool,
 }
 
+/// 代码生成提示词路径
+const CODEGEN_SYSTEM_PROMPT_PATH: &str = "codegen/system.md";
+
+/// 构造用户提示词，附带表结构与字段清单
+fn build_ai_user_prompt(config: &GenConfigVO, requirement: Option<&str>) -> String {
+    let columns = config
+        .field_configs
+        .iter()
+        .map(|field| {
+            serde_json::json!({
+                "columnName": field.column_name,
+                "columnType": field.data_type,
+                "fieldComment": field.column_comment,
+                "isRequired": field.is_required,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    format!(
+        "表名：{}\n当前业务名：{}\n补充说明：{}\n字段列表：\n{}",
+        config.table_name,
+        config.business_name.as_deref().unwrap_or(""),
+        requirement
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("无"),
+        serde_json::to_string(&columns).unwrap_or_else(|_| "[]".to_string())
+    )
+}
+
+/// 按列名匹配回填字段配置
+fn apply_ai_field_configs(fields: &mut [ColumnVO], value: &serde_json::Value) {
+    let Some(ai_fields) = value["fieldConfigs"].as_array() else {
+        return;
+    };
+
+    for field in fields.iter_mut() {
+        let column_name = field.column_name.clone();
+        let Some(ai_field) = ai_fields
+            .iter()
+            .find(|item| item["columnName"].as_str().map(str::trim) == Some(column_name.as_str()))
+        else {
+            continue;
+        };
+
+        if let Some(comment) = ai_field["fieldComment"]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            field.column_comment = comment.to_string();
+        }
+        if let Some(dict_type) = ai_field["dictType"]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            field.dict_type = Some(dict_type.to_string());
+        }
+        if let Some(form_type) = form_type_value(ai_field["formType"].as_str().unwrap_or_default()) {
+            field.form_type = Some(form_type);
+        }
+        if let Some(query_type) = query_type_value(ai_field["queryType"].as_str().unwrap_or_default()) {
+            field.query_type = Some(query_type);
+        }
+        if let Some(ai_value) = ai_field["isRequired"].as_i64() {
+            field.is_required = ai_value as i16;
+        }
+        if let Some(ai_value) = ai_field["isShowInList"].as_i64() {
+            field.is_show_in_list = ai_value as i16;
+        }
+        if let Some(ai_value) = ai_field["isShowInForm"].as_i64() {
+            field.is_show_in_form = ai_value as i16;
+        }
+        if let Some(ai_value) = ai_field["isShowInQuery"].as_i64() {
+            field.is_show_in_query = ai_value as i16;
+        }
+    }
+}
+
+/// 表单类型枚举名转存储值
+fn form_type_value(name: &str) -> Option<i16> {
+    match name.trim().to_uppercase().as_str() {
+        "INPUT" => Some(1),
+        "SELECT" => Some(2),
+        "RADIO" => Some(3),
+        "CHECK_BOX" => Some(4),
+        "INPUT_NUMBER" => Some(5),
+        "SWITCH" => Some(6),
+        "TEXT_AREA" => Some(7),
+        "DATE" => Some(8),
+        "DATE_TIME" => Some(9),
+        "HIDDEN" => Some(10),
+        _ => None,
+    }
+}
+
+/// 查询类型枚举名转存储值
+fn query_type_value(name: &str) -> Option<i16> {
+    match name.trim().to_uppercase().as_str() {
+        "EQ" => Some(1),
+        "LIKE" => Some(2),
+        "IN" => Some(3),
+        "BETWEEN" => Some(4),
+        "GT" => Some(5),
+        "GE" => Some(6),
+        "LT" => Some(7),
+        "LE" => Some(8),
+        "NE" => Some(9),
+        "LIKE_LEFT" => Some(10),
+        _ => None,
+    }
+}
+
 // ── 服务 ──
 
 pub struct CodegenService<'a> {
@@ -285,6 +399,31 @@ impl<'a> CodegenService<'a> {
     // ═══════════════════════════════════════════
     // 配置 CRUD
     // ═══════════════════════════════════════════
+
+    /// 用 AI 推断代码生成配置，未推断出的字段沿用原有默认值
+    pub async fn ai_fill_config(
+        &self,
+        http: &reqwest::Client,
+        ai_config: &crate::config::AiConfig,
+        table_name: &str,
+        requirement: Option<&str>,
+    ) -> AppResult<GenConfigVO> {
+        let mut config = self.config(table_name).await?;
+        let system_prompt = crate::ai::prompt(CODEGEN_SYSTEM_PROMPT_PATH)?;
+        let user_prompt = build_ai_user_prompt(&config, requirement);
+        let value = crate::ai::chat_json_list(http, ai_config, system_prompt, &user_prompt).await?;
+
+        if let Some(name) = value["businessName"]
+            .as_str()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            config.business_name = Some(name.to_string());
+        }
+        apply_ai_field_configs(&mut config.field_configs, &value);
+
+        Ok(config)
+    }
 
     /// 获取代码生成配置（优先从 DB，回退到元数据推导）
     pub async fn config(&self, table_name: &str) -> AppResult<GenConfigVO> {

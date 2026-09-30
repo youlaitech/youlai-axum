@@ -6,7 +6,7 @@ use axum::{
 
 use crate::error::{AppError, AppResult};
 use crate::modules::codegen::dto::{
-    GenConfigForm, GenConfigVO, PreviewQuery, PreviewVO, TableListVO,
+    AiFillConfigForm, GenConfigForm, GenConfigVO, PreviewQuery, PreviewVO, TableListVO,
 };
 use crate::modules::codegen::service::CodegenService;
 use crate::response::Result;
@@ -36,6 +36,20 @@ pub async fn get_config(
 ) -> AppResult<Json<Result<GenConfigVO>>> {
     let config = CodegenService::new(&state.db)
         .config(&table_name)
+        .await?;
+    Ok(Json(Result::success(config)))
+}
+
+/// AI 填充代码生成配置
+pub async fn ai_fill_config(
+    State(state): State<AppState>,
+    Path(table_name): Path<String>,
+    body: Option<Json<AiFillConfigForm>>,
+) -> AppResult<Json<Result<GenConfigVO>>> {
+    let requirement = body.and_then(|Json(form)| form.requirement);
+    let http = reqwest::Client::new();
+    let config = CodegenService::new(&state.db)
+        .ai_fill_config(&http, &state.settings.ai, &table_name, requirement.as_deref())
         .await?;
     Ok(Json(Result::success(config)))
 }

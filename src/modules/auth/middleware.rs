@@ -64,7 +64,7 @@ fn error_response(status: StatusCode, code: ResultCode, msg: Option<String>) -> 
 }
 
 /// 路径匹配：
-/// - `**`  后缀：匹配前缀本身及其下任意层级的子路径（如 `/api/v1/auth/login/**` 匹配 `/api/v1/auth/login` 与 `/api/v1/auth/login/sms`）
+/// - `**`  后缀：匹配前缀本身及其下任意层级的子路径（如 `/api/v1/auth/sms/**` 匹配 `/api/v1/auth/sms/code` 与 `/api/v1/auth/sms/login`）
 /// - `/*`  后缀：匹配前缀下的一级子路径（如 `/swagger-ui/*`）
 /// - 其它：精确匹配（忽略结尾斜杠）
 fn is_match(pattern: &str, path: &str) -> bool {

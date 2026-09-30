@@ -41,16 +41,27 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/users/email/code", post(send_email_code))
         .route("/api/v1/users/email", put(bind_email).delete(unbind_email))
         .route("/api/v1/users/template", get(download_template))
-        .route("/api/v1/users/export", get(export_users))
-        .route("/api/v1/users/import", post(import_users))
+        .route(
+            "/api/v1/users/export",
+            get(export_users).route_layer(middleware::from_fn(require_perm("sys:user:export"))),
+        )
+        .route(
+            "/api/v1/users/import",
+            post(import_users).route_layer(middleware::from_fn(require_perm("sys:user:import"))),
+        )
         .route(
             "/api/v1/users/{id}/form",
             get(get_user_form).route_layer(middleware::from_fn(require_perm("sys:user:update"))),
         )
-        .route("/api/v1/users/{id}/status", patch(update_user_status))
+        .route(
+            "/api/v1/users/{id}/status",
+            patch(update_user_status)
+                .route_layer(middleware::from_fn(require_perm("sys:user:update"))),
+        )
         .route(
             "/api/v1/users/{id}/password/reset",
-            put(reset_user_password),
+            put(reset_user_password)
+                .route_layer(middleware::from_fn(require_perm("sys:user:reset-password"))),
         )
         .route(
             "/api/v1/users",

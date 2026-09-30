@@ -28,7 +28,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/api/v1/depts/{id}/form",
-            get(get_dept_form).route_layer(middleware::from_fn(require_perm("sys:dept:query"))),
+            get(get_dept_form).route_layer(middleware::from_fn(require_perm("sys:dept:update"))),
         )
         .route(
             "/api/v1/depts/{id}",

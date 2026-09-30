@@ -28,7 +28,6 @@ pub fn routes() -> Router<AppState> {
             get(list_notices).route_layer(middleware::from_fn(require_perm("sys:notice:list"))),
         )
         .route("/api/v1/notices/my", get(list_my_notices))
-        .route("/api/v1/notices/unread-count", get(unread_count))
         .route("/api/v1/notices/read-all", put(read_all))
         .route("/api/v1/notices/{id}/detail", get(get_notice_detail))
         .route(
@@ -100,17 +99,6 @@ async fn read_all(
     let user = extract_user(req.extensions())?;
     NoticeService::new(&state.db).read_all(user.user_id).await?;
     Ok(Json(Result::success_empty()))
-}
-
-/// 获取当前用户未读通知数量
-async fn unread_count(
-    State(state): State<AppState>,
-    AuthUser(user): AuthUser,
-) -> AppResult<Json<Result<i64>>> {
-    let n = NoticeService::new(&state.db)
-        .unread_count(user.user_id)
-        .await?;
-    Ok(Json(Result::success(n)))
 }
 
 /// 通知详情（登录用户查看时标记为已读）

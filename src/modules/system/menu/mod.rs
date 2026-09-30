@@ -13,7 +13,7 @@ use crate::state::AppState;
 use axum::{
     extract::{Path, Query, RawQuery, State},
     middleware,
-    routing::{get, patch, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 
@@ -30,9 +30,23 @@ pub fn routes() -> Router<AppState> {
             "/api/v1/menus",
             post(create_menu).route_layer(middleware::from_fn(require_perm("sys:menu:create"))),
         )
-        .route("/api/v1/menus/{id}/form", get(get_menu_form))
-        .route("/api/v1/menus/{id}", put(update_menu).delete(delete_menu))
-        .route("/api/v1/menus/{id}", patch(update_menu_visible))
+        .route(
+            "/api/v1/menus/{id}/form",
+            get(get_menu_form).route_layer(middleware::from_fn(require_perm("sys:menu:update"))),
+        )
+        .route(
+            "/api/v1/menus/{id}",
+            put(update_menu).route_layer(middleware::from_fn(require_perm("sys:menu:update"))),
+        )
+        .route(
+            "/api/v1/menus/{id}",
+            delete(delete_menu).route_layer(middleware::from_fn(require_perm("sys:menu:delete"))),
+        )
+        .route(
+            "/api/v1/menus/{id}",
+            patch(update_menu_visible)
+                .route_layer(middleware::from_fn(require_perm("sys:menu:update"))),
+        )
 }
 
 async fn list_menus(State(state): State<AppState>) -> AppResult<Json<Result<Vec<MenuVO>>>> {

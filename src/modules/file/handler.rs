@@ -73,19 +73,26 @@ pub async fn upload_file(
         let stored_name = format!("{}.{}", Uuid::new_v4(), ext);
         let object_key = format!("{date_dir}/{stored_name}");
 
-        let url = if cfg.r#type == "s3" {
-            upload_to_s3(&cfg.s3, &object_key, data.to_vec(), content_type).await?
-        } else {
-            let abs_path = PathBuf::from(&cfg.local.path).join(&object_key);
-            if let Some(parent) = abs_path.parent() {
-                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+        let url = match cfg.r#type.as_str() {
+            "s3" => upload_to_s3(&cfg.s3, &object_key, data.to_vec(), content_type).await?,
+            "local" => {
+                let abs_path = PathBuf::from(&cfg.local.path).join(&object_key);
+                if let Some(parent) = abs_path.parent() {
+                    tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                        AppError::Business(ResultCode::UploadFileException, Some(e.to_string()))
+                    })?;
+                }
+                tokio::fs::write(&abs_path, &data).await.map_err(|e| {
                     AppError::Business(ResultCode::UploadFileException, Some(e.to_string()))
                 })?;
+                format!("{}/{}", cfg.local.base_url.trim_end_matches('/'), object_key)
             }
-            tokio::fs::write(&abs_path, &data).await.map_err(|e| {
-                AppError::Business(ResultCode::UploadFileException, Some(e.to_string()))
-            })?;
-            format!("{}/{}", cfg.local.base_url.trim_end_matches('/'), object_key)
+            other => {
+                return Err(AppError::Business(
+                    ResultCode::UploadFileException,
+                    Some(format!("未实现的存储类型: {other}")),
+                ))
+            }
         };
 
         return Ok(axum::Json(Result::success(FileInfo {
@@ -105,20 +112,42 @@ pub async fn delete_file(
     Query(q): Query<DeleteFileQuery>,
 ) -> AppResult<axum::Json<Result<()>>> {
     let cfg = &state.settings.file;
-    if cfg.r#type == "s3" {
-        let key = extract_s3_key(&cfg.s3, &q.file_path);
-        delete_s3_object(&cfg.s3, &key).await?;
-    } else {
-        let rel = q
-            .file_path
-            .trim_start_matches(&cfg.local.base_url)
-            .trim_start_matches('/')
-            .to_string();
-        let abs = PathBuf::from(&cfg.local.path).join(&rel);
-        if abs.exists() {
-            tokio::fs::remove_file(&abs).await.map_err(|e| {
-                AppError::Business(ResultCode::DeleteFileException, Some(e.to_string()))
-            })?;
+    match cfg.r#type.as_str() {
+        "s3" => {
+            let key = extract_s3_key(&cfg.s3, &q.file_path);
+            delete_s3_object(&cfg.s3, &key).await?;
+        }
+        "local" => {
+            let rel = q
+                .file_path
+                .trim_start_matches(&cfg.local.base_url)
+                .trim_start_matches('/');
+            let root = PathBuf::from(&cfg.local.path);
+            let abs = root.join(rel);
+            if abs.exists() {
+                // 防目录穿越：规范化后的目标必须仍在存储根目录内
+                let root_abs = root.canonicalize().map_err(|e| {
+                    AppError::Business(ResultCode::DeleteFileException, Some(e.to_string()))
+                })?;
+                let target = abs.canonicalize().map_err(|e| {
+                    AppError::Business(ResultCode::DeleteFileException, Some(e.to_string()))
+                })?;
+                if !target.starts_with(&root_abs) {
+                    return Err(AppError::Business(
+                        ResultCode::DeleteFileException,
+                        Some("文件路径不合法".into()),
+                    ));
+                }
+                tokio::fs::remove_file(&target).await.map_err(|e| {
+                    AppError::Business(ResultCode::DeleteFileException, Some(e.to_string()))
+                })?;
+            }
+        }
+        other => {
+            return Err(AppError::Business(
+                ResultCode::DeleteFileException,
+                Some(format!("未实现的存储类型: {other}")),
+            ))
         }
     }
     Ok(axum::Json(Result::success_empty()))

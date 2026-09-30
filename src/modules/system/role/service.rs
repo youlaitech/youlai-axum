@@ -109,6 +109,27 @@ impl<'a> RoleService<'a> {
         a.status = Set(f.status.unwrap_or(1));
         a.data_scope = Set(f.data_scope);
         a.update(self.db).await?;
+
+        if let Some(ref dept_ids) = f.dept_ids {
+            self.replace_dept_ids(f.id, dept_ids).await?;
+        }
+        Ok(())
+    }
+
+    /// 重写角色关联的自定义部门
+    async fn replace_dept_ids(&self, id: i64, dept_ids: &[i64]) -> AppResult<()> {
+        entity::sys_role_dept::Entity::delete_many()
+            .filter(entity::sys_role_dept::Column::RoleId.eq(id))
+            .exec(self.db)
+            .await?;
+        for &did in dept_ids {
+            entity::sys_role_dept::ActiveModel {
+                role_id: Set(id),
+                dept_id: Set(did),
+            }
+            .insert(self.db)
+            .await?;
+        }
         Ok(())
     }
 
@@ -185,33 +206,6 @@ impl<'a> RoleService<'a> {
             .collect())
     }
 
-    /// 更新角色数据权限范围及自定义部门
-    pub async fn update_data_scope(&self, id: i64, f: &DataScopeForm) -> AppResult<()> {
-        entity::sys_role::Entity::update_many()
-            .col_expr(
-                entity::sys_role::Column::DataScope,
-                Expr::value(f.data_scope),
-            )
-            .filter(entity::sys_role::Column::Id.eq(id))
-            .exec(self.db)
-            .await?;
-        if let Some(ref dept_ids) = f.dept_ids {
-            entity::sys_role_dept::Entity::delete_many()
-                .filter(entity::sys_role_dept::Column::RoleId.eq(id))
-                .exec(self.db)
-                .await?;
-            for &did in dept_ids {
-                entity::sys_role_dept::ActiveModel {
-                    role_id: Set(id),
-                    dept_id: Set(did),
-                }
-                .insert(self.db)
-                .await?;
-            }
-        }
-        Ok(())
-    }
-
     /// 角色下拉选项
     pub async fn get_options(&self) -> AppResult<Vec<RoleOptionVO>> {
         Ok(entity::sys_role::Entity::find()
@@ -222,6 +216,23 @@ impl<'a> RoleService<'a> {
             .iter()
             .map(|r| RoleOptionVO {
                 value: r.id,
+                label: r.name.clone(),
+            })
+            .collect())
+    }
+
+    /// 角色编码下拉选项
+    pub async fn get_code_options(&self) -> AppResult<Vec<RoleCodeOptionVO>> {
+        Ok(entity::sys_role::Entity::find()
+            .filter(entity::sys_role::Column::IsDeleted.eq(0))
+            .filter(entity::sys_role::Column::Status.eq(1))
+            .filter(entity::sys_role::Column::Code.ne(crate::constants::ROOT_ROLE_CODE))
+            .order_by_asc(entity::sys_role::Column::Sort)
+            .all(self.db)
+            .await?
+            .iter()
+            .map(|r| RoleCodeOptionVO {
+                value: r.code.clone(),
                 label: r.name.clone(),
             })
             .collect())
