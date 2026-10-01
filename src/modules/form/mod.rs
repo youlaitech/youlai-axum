@@ -80,7 +80,7 @@ pub fn routes() -> Router<AppState> {
             get(data_detail).route_layer(middleware::from_fn(require_perm("form:data:list"))),
         )
         .route(
-            "/api/v1/forms/{form_key}/data/{ids}",
+            "/api/v1/forms/{form_key}/data/{id}",
             delete(delete_data)
                 .route_layer(middleware::from_fn(require_perm("form:data:delete"))),
         )

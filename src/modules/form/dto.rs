@@ -27,6 +27,7 @@ pub struct FormDataQuery {
 #[derive(Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct FormDefinitionForm {
+    #[serde(default, deserialize_with = "crate::util::opt_i64_from_any")]
     pub id: Option<i64>,
     #[validate(length(min = 1, max = 64))]
     pub form_key: String,
@@ -44,7 +45,9 @@ pub struct FormDefinitionForm {
 pub struct FormMenuForm {
     #[validate(length(min = 1, max = 50))]
     pub menu_name: String,
+    #[serde(default, deserialize_with = "crate::util::opt_i64_from_any")]
     pub parent_id: Option<i64>,
+    #[serde(default, deserialize_with = "crate::util::opt_vec_i64_from_any")]
     pub role_ids: Option<Vec<i64>>,
 }
 
@@ -105,4 +108,44 @@ pub struct FormRenderVO {
     pub version: i32,
     pub form_json: Value,
     pub options_json: Option<Value>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 复现接口测试「修改表单定义」的入参：id 为列表回传的字符串
+    #[test]
+    fn definition_form_accepts_string_id() {
+        let body = r#"{
+            "id": "1004",
+            "formKey": "apitest_form_x",
+            "formName": "接口测试表单改_X",
+            "description": "apitest",
+            "formJson": "[{\"type\":\"input\",\"field\":\"name\",\"title\":\"姓名\"}]",
+            "optionsJson": "{}",
+            "isPublic": 1,
+            "category": "normal"
+        }"#;
+        let f: FormDefinitionForm = serde_json::from_str(body).expect("字符串 id 应可解析");
+        assert_eq!(f.id, Some(1004));
+        assert_eq!(f.form_key, "apitest_form_x");
+    }
+
+    /// 新增时不传 id，也应正常解析
+    #[test]
+    fn definition_form_allows_missing_id() {
+        let body = r#"{"formKey":"k","formName":"n"}"#;
+        let f: FormDefinitionForm = serde_json::from_str(body).expect("缺省 id 应可解析");
+        assert_eq!(f.id, None);
+    }
+
+    /// 发布向导：菜单树回传的 parentId 与角色多选回传的 roleIds 均为字符串
+    #[test]
+    fn menu_form_accepts_string_ids() {
+        let body = r#"{"menuName":"菜单","parentId":"0","roleIds":["1","2"]}"#;
+        let f: FormMenuForm = serde_json::from_str(body).expect("字符串 ID 应可解析");
+        assert_eq!(f.parent_id, Some(0));
+        assert_eq!(f.role_ids, Some(vec![1, 2]));
+    }
 }

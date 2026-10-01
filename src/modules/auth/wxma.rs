@@ -143,9 +143,12 @@ fn ensure_wx_configured(cfg: &WxMaConfig) -> AppResult<()> {
 
 // ==================== 微信开放接口调用 ====================
 
+/// `sns/jscode2session` 响应
 #[derive(Debug, Deserialize)]
 struct Jscode2SessionResp {
+    #[serde(default)]
     openid: String,
+    #[serde(default)]
     session_key: String,
     unionid: Option<String>,
     errcode: Option<i32>,
@@ -154,6 +157,7 @@ struct Jscode2SessionResp {
 
 #[derive(Debug, Deserialize)]
 struct AccessTokenResp {
+    #[serde(default)]
     access_token: String,
     errcode: Option<i32>,
     errmsg: Option<String>,
@@ -166,7 +170,9 @@ struct PhoneNumberResp {
     phone_info: Option<PhoneInfo>,
 }
 
+/// 微信手机号信息为驼峰命名（phoneNumber / purePhoneNumber）
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PhoneInfo {
     phone_number: Option<String>,
     pure_phone_number: Option<String>,
@@ -253,6 +259,12 @@ fn parse_jscode2session(body: &str) -> AppResult<Jscode2SessionResp> {
         return Err(AppError::Business(
             ResultCode::SystemError,
             Some(format!("微信登录失败：{}", resp.errmsg.unwrap_or_default())),
+        ));
+    }
+    if resp.openid.is_empty() || resp.session_key.is_empty() {
+        return Err(AppError::Business(
+            ResultCode::SystemError,
+            Some("微信登录失败：响应缺少 openid/session_key".into()),
         ));
     }
     Ok(resp)
