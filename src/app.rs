@@ -16,8 +16,8 @@ use crate::modules::auth::token::create_token_manager;
 use crate::modules::codegen::routes as codegen_routes;
 use crate::modules::file::routes as file_routes;
 use crate::modules::form::routes as form_routes;
-use crate::modules::sse::hub::MessageHub;
-use crate::modules::sse::routes as sse_routes;
+use crate::modules::realtime::hub::MessageHub;
+use crate::modules::realtime::routes as realtime_routes;
 use crate::modules::system::routes as system_routes;
 use crate::openapi::swagger_ui;
 use crate::rate_limit::rate_limit_mw;
@@ -54,7 +54,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .merge(auth_routes())
         .merge(system_routes())
-        .merge(sse_routes())
+        .merge(realtime_routes())
         .merge(file_routes())
         .merge(form_routes())
         .merge(codegen_routes())

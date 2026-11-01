@@ -21,7 +21,12 @@ pub mod redis_key {
     pub const SYS_CONFIG: &str = "sys:config";
     /// 扫码登录票据 Key 前缀，完整 Key 为 `auth:qr_code:{ticket}`
     pub const QR_CODE_PREFIX: &str = "auth:qr_code";
+    /// 小程序会话密钥前缀，完整 Key 为 `auth:wxma:session_key:{provider}:{openid}`
+    pub const WXMA_SESSION_KEY: &str = "auth:wxma:session_key";
 }
+
+/// 微信小程序的认证源标识，与配置保持一致
+pub const WECHAT_MINI_PROVIDER: &str = "wechat-mini-main";
 
 /// 手机/邮箱验证码 Redis Key 前缀（如 captcha:mobile:138...）
 pub const MOBILE_CODE: &str = "captcha:mobile";

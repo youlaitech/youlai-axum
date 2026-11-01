@@ -30,8 +30,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::sys_user_role::Entity")]
     SysUserRole,
-    #[sea_orm(has_many = "super::sys_user_social::Entity")]
-    SysUserSocial,
+    #[sea_orm(has_many = "super::sys_user_identity::Entity")]
+    SysUserIdentity,
 }
 
 impl Related<super::sys_user_role::Entity> for Entity {
@@ -39,9 +39,9 @@ impl Related<super::sys_user_role::Entity> for Entity {
         Relation::SysUserRole.def()
     }
 }
-impl Related<super::sys_user_social::Entity> for Entity {
+impl Related<super::sys_user_identity::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SysUserSocial.def()
+        Relation::SysUserIdentity.def()
     }
 }
 

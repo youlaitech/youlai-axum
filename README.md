@@ -164,6 +164,16 @@ youlai-axum/
 | [youlai-nest (multi-tenant)](https://gitee.com/youlaiorg/youlai-nest/tree/multi-tenant) | youlai-nest | 分支 | 多租户 SaaS，租户隔离与租户配置 | ✅️ |
 | [youlai-boot (spring-boot-3)](https://gitee.com/youlaiorg/youlai-boot/tree/spring-boot-3) | youlai-boot | 分支 | Spring Boot 3 兼容分支 | ❌️ |
 
+## 可选扩展
+
+**AI 辅助（默认关闭）**：`config/config.toml` 的 `[ai]` 段打开开关并填写密钥，接口为 OpenAI 兼容协议。
+
+```toml
+[ai]
+enabled = true
+api_key = "sk-xxx"
+```
+
 ## 技术合作
 
 本项目采用 [Apache License 2.0](LICENSE) 开源，可免费商用。欢迎在 [Issue](https://gitee.com/youlaiorg/youlai-axum/issues) 提交问题或反馈，也欢迎提交 [Pull Request](https://gitee.com/youlaiorg/youlai-axum/pulls) 共建。

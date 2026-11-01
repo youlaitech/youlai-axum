@@ -16,4 +16,4 @@ pub mod sys_role_menu;
 pub mod sys_user;
 pub mod sys_user_notice;
 pub mod sys_user_role;
-pub mod sys_user_social;
+pub mod sys_user_identity;

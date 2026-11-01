@@ -158,13 +158,13 @@ impl<'a> AuthService<'a> {
         &self,
         openid: &str,
     ) -> AppResult<Option<entity::sys_user::Model>> {
-        let social = entity::sys_user_social::Entity::find()
-            .filter(entity::sys_user_social::Column::Platform.eq("WECHAT_MINI"))
-            .filter(entity::sys_user_social::Column::Openid.eq(openid))
+        let identity = entity::sys_user_identity::Entity::find()
+            .filter(entity::sys_user_identity::Column::Provider.eq(constants::WECHAT_MINI_PROVIDER))
+            .filter(entity::sys_user_identity::Column::ProviderAccountId.eq(openid))
             .one(self.db)
             .await?;
-        if let Some(s) = social {
-            let user = entity::sys_user::Entity::find_by_id(s.user_id)
+        if let Some(i) = identity {
+            let user = entity::sys_user::Entity::find_by_id(i.user_id)
                 .filter(entity::sys_user::Column::IsDeleted.eq(0))
                 .one(self.db)
                 .await?;
@@ -226,42 +226,57 @@ impl<'a> AuthService<'a> {
         Ok(user)
     }
 
-    /// 绑定或更新微信小程序社交账号（openid）
+    /// 绑定微信 openid，会话密钥写入 Redis
     pub async fn bind_wechat_openid(
         &self,
         user_id: i64,
         openid: &str,
-        unionid: Option<&str>,
         session_key: Option<&str>,
     ) -> AppResult<()> {
-        let existing = entity::sys_user_social::Entity::find()
-            .filter(entity::sys_user_social::Column::Platform.eq("WECHAT_MINI"))
-            .filter(entity::sys_user_social::Column::Openid.eq(openid))
+        let existing = entity::sys_user_identity::Entity::find()
+            .filter(entity::sys_user_identity::Column::Provider.eq(constants::WECHAT_MINI_PROVIDER))
+            .filter(entity::sys_user_identity::Column::ProviderAccountId.eq(openid))
             .one(self.db)
             .await?;
         let now = chrono::Utc::now().naive_utc();
-        if let Some(s) = existing {
-            let mut am: entity::sys_user_social::ActiveModel = s.into();
-            am.user_id = Set(user_id);
-            if session_key.is_some() {
-                am.session_key = Set(session_key.map(|x| x.to_string()));
+        if let Some(i) = existing {
+            if i.user_id != user_id {
+                // 账号已归属其他用户，不转移
+                tracing::warn!("该微信账号已关联其他用户，user_id={user_id}, openid={openid}");
+                return Ok(());
             }
+            let mut am: entity::sys_user_identity::ActiveModel = i.into();
+            am.last_login_time = Set(Some(now));
             am.update_time = Set(Some(now));
             am.update(self.db).await.ok();
         } else {
-            let _: Result<_, _> = entity::sys_user_social::ActiveModel {
+            let _: Result<_, _> = entity::sys_user_identity::ActiveModel {
                 user_id: Set(user_id),
-                platform: Set("WECHAT_MINI".into()),
-                openid: Set(openid.into()),
-                unionid: Set(unionid.map(|x| x.to_string())),
-                session_key: Set(session_key.map(|x| x.to_string())),
-                verified: Set(1),
+                provider: Set(constants::WECHAT_MINI_PROVIDER.into()),
+                provider_account_id: Set(openid.into()),
+                last_login_time: Set(Some(now)),
                 create_time: Set(Some(now)),
                 update_time: Set(Some(now)),
                 ..Default::default()
             }
             .insert(self.db)
             .await;
+        }
+
+        if let Some(sk) = session_key {
+            let key = format!(
+                "{}:{}:{}",
+                constants::redis_key::WXMA_SESSION_KEY,
+                constants::WECHAT_MINI_PROVIDER,
+                openid
+            );
+            let mut r = self.redis.clone();
+            let _: Result<(), _> = redis::cmd("SETEX")
+                .arg(&key)
+                .arg(3 * 24 * 3600)
+                .arg(sk)
+                .query_async(&mut r)
+                .await;
         }
         Ok(())
     }

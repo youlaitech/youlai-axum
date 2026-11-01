@@ -6,7 +6,7 @@ use crate::error::{AppError, AppResult};
 use crate::modules::auth::extractor;
 use crate::modules::auth::extractor::AuthUser;
 use crate::modules::auth::permission::require_perm;
-use crate::modules::sse::topics::{NOTICE, NOTICE_REVOKE};
+use crate::modules::realtime::topics::{EVENT_NOTICE_CHANGED, TOPIC_NOTICE};
 use crate::modules::system::notice::dto::*;
 use crate::modules::system::notice::service::NoticeService;
 use crate::response::{PageResult, Result};
@@ -175,16 +175,22 @@ async fn publish_notice(
     Path(id): Path<i64>,
     AuthUser(user): AuthUser,
 ) -> AppResult<Json<Result<()>>> {
-    let (vo, target_ids) = NoticeService::new(&state.db)
+    let (_, target_ids) = NoticeService::new(&state.db)
         .publish(id, user.user_id)
         .await?;
-    // 仅推送给在线的目标用户（定向推送按 user_id 命中 SSE 会话）
+    // 仅推送给在线的目标用户（定向推送按 user_id 命中实时会话）
     let online: std::collections::HashSet<i64> =
         state.message_hub.get_online_users().await.into_iter().collect();
-    let data = serde_json::to_value(&vo).unwrap_or(serde_json::json!({}));
     for uid in &target_ids {
         if online.contains(uid) {
-            state.message_hub.send_to_user(*uid, NOTICE, data.clone()).await;
+            state
+                .message_hub
+                .send_to_user(
+                    *uid,
+                    EVENT_NOTICE_CHANGED,
+                    serde_json::json!({ "noticeId": id.to_string(), "action": "published" }),
+                )
+                .await;
         }
     }
     Ok(Json(Result::success_empty()))
@@ -198,7 +204,11 @@ async fn revoke_notice(
     NoticeService::new(&state.db).revoke(id).await?;
     state
         .message_hub
-        .broadcast(NOTICE_REVOKE, serde_json::json!({ "id": id }))
+        .broadcast(
+            TOPIC_NOTICE,
+            EVENT_NOTICE_CHANGED,
+            serde_json::json!({ "noticeId": id.to_string(), "action": "revoked" }),
+        )
         .await;
     Ok(Json(Result::success_empty()))
 }

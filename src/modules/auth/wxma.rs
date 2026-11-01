@@ -84,13 +84,8 @@ async fn phone_login(
     let mobile = get_phone_number(cfg, &req.phone_code).await?;
     let auth = AuthService::new(&state.db, &state.redis, &state.token_manager);
     let user = auth.find_or_create_user_by_mobile(&mobile).await?;
-    auth.bind_wechat_openid(
-        user.id,
-        &session.openid,
-        session.unionid.as_deref(),
-        Some(&session.session_key),
-    )
-    .await?;
+    auth.bind_wechat_openid(user.id, &session.openid, Some(&session.session_key))
+        .await?;
     let token = auth.login_by_mobile(&mobile).await?;
     Ok(Json(Result::success(token)))
 }
@@ -124,7 +119,7 @@ async fn bind_mobile(
 
     let auth = AuthService::new(&state.db, &state.redis, &state.token_manager);
     let user = auth.find_or_create_user_by_mobile(&req.mobile).await?;
-    auth.bind_wechat_openid(user.id, &req.openid, None, None)
+    auth.bind_wechat_openid(user.id, &req.openid, None)
         .await?;
     let token = auth.login_by_mobile(&req.mobile).await?;
     Ok(Json(Result::success(token)))
@@ -150,7 +145,6 @@ struct Jscode2SessionResp {
     openid: String,
     #[serde(default)]
     session_key: String,
-    unionid: Option<String>,
     errcode: Option<i32>,
     errmsg: Option<String>,
 }

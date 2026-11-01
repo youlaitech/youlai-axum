@@ -4,7 +4,7 @@ pub mod service;
 
 use crate::error::AppResult;
 use crate::modules::auth::permission::require_perm;
-use crate::modules::sse::topics::DICT;
+use crate::modules::realtime::topics::{EVENT_DICT_CHANGED, TOPIC_DICT};
 use crate::modules::system::dict::dto::*;
 use crate::modules::system::dict::service::DictService;
 use crate::response::{PageResult, Result};
@@ -15,11 +15,6 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-
-/// 当前毫秒时间戳（SSE 事件用）
-fn now_ts() -> i64 {
-    chrono::Utc::now().timestamp_millis()
-}
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -104,9 +99,10 @@ async fn create_dict(
     state
         .message_hub
         .broadcast(
-            DICT,
-            serde_json::json!({ "dictCode": f.dict_code, "timestamp": now_ts() }),
-        )
+                TOPIC_DICT,
+                EVENT_DICT_CHANGED,
+                serde_json::json!({ "dictCode": f.dict_code }),
+            )
         .await;
     Ok(Json(Result::success(id)))
 }
@@ -124,9 +120,10 @@ async fn update_dict(
     state
         .message_hub
         .broadcast(
-            DICT,
-            serde_json::json!({ "dictCode": f.dict_code, "timestamp": now_ts() }),
-        )
+                TOPIC_DICT,
+                EVENT_DICT_CHANGED,
+                serde_json::json!({ "dictCode": f.dict_code }),
+            )
         .await;
     Ok(Json(Result::success_empty()))
 }
@@ -137,13 +134,13 @@ async fn delete_dicts(
 ) -> AppResult<Json<Result<u64>>> {
     let codes = DictService::new(&state.db).get_codes_by_ids(&ids).await?;
     let n = DictService::new(&state.db).delete(&ids).await?;
-    let ts = now_ts();
     for code in codes {
         state
             .message_hub
             .broadcast(
-                DICT,
-                serde_json::json!({ "dictCode": code, "timestamp": ts }),
+                TOPIC_DICT,
+                EVENT_DICT_CHANGED,
+                serde_json::json!({ "dictCode": code }),
             )
             .await;
     }
@@ -193,9 +190,10 @@ async fn create_dict_item(
     state
         .message_hub
         .broadcast(
-            DICT,
-            serde_json::json!({ "dictCode": dict_code, "timestamp": now_ts() }),
-        )
+                TOPIC_DICT,
+                EVENT_DICT_CHANGED,
+                serde_json::json!({ "dictCode": dict_code }),
+            )
         .await;
     Ok(Json(Result::success(id)))
 }
@@ -212,9 +210,10 @@ async fn update_dict_item(
     state
         .message_hub
         .broadcast(
-            DICT,
-            serde_json::json!({ "dictCode": _dict_code, "timestamp": now_ts() }),
-        )
+                TOPIC_DICT,
+                EVENT_DICT_CHANGED,
+                serde_json::json!({ "dictCode": _dict_code }),
+            )
         .await;
     Ok(Json(Result::success_empty()))
 }
@@ -228,9 +227,10 @@ async fn delete_dict_items(
     state
         .message_hub
         .broadcast(
-            DICT,
-            serde_json::json!({ "dictCode": dict_code, "timestamp": now_ts() }),
-        )
+                TOPIC_DICT,
+                EVENT_DICT_CHANGED,
+                serde_json::json!({ "dictCode": dict_code }),
+            )
         .await;
     Ok(Json(Result::success(n)))
 }

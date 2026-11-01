@@ -4,7 +4,7 @@
 
 use crate::config::Settings;
 use crate::modules::auth::token::DynTokenManager;
-use crate::modules::sse::hub::MessageHub;
+use crate::modules::realtime::hub::MessageHub;
 use redis::aio::ConnectionManager;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ pub struct AppState {
     pub redis: ConnectionManager,
     /// Token 管理器（JWT / Redis-Token 双模式）
     pub token_manager: Arc<DynTokenManager>,
-    /// SSE 管理器
+    /// 实时连接管理器
     pub message_hub: Arc<MessageHub>,
     /// 应用配置
     pub settings: Arc<Settings>,

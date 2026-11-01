@@ -301,6 +301,16 @@ youlai-rust/
 
 
 
+## Optional Extensions
+
+**AI (off by default)**: enable `[ai]` in `config/config.toml` and fill in the key; the API is OpenAI-compatible.
+
+```toml
+[ai]
+enabled = true
+api_key = "sk-xxx"
+```
+
 ## Documentation
 
 

@@ -198,7 +198,7 @@ impl<'a> NoticeService<'a> {
                 .all(self.db)
                 .await?
         };
-        // 目标用户 ID 列表（与 SSE 会话 key 同源，保证定向推送命中）
+        // 目标用户 ID 列表（与实时会话 key 同源，保证定向推送命中）
         let targets: Vec<i64> = users.iter().map(|u| u.id).collect();
 
         // 批量写入未读记录

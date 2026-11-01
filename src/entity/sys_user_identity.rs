@@ -3,19 +3,16 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
-#[sea_orm(table_name = "sys_user_social")]
+#[sea_orm(table_name = "sys_user_identity")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub user_id: i64,
-    pub platform: String,
-    pub openid: String,
-    pub unionid: Option<String>,
-    pub nickname: Option<String>,
-    pub avatar: Option<String>,
-    pub session_key: Option<String>,
-    #[sea_orm(default_value = 1)]
-    pub verified: i16,
+    pub provider: String,
+    pub provider_account_id: String,
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub last_login_time: Option<NaiveDateTime>,
     pub create_time: Option<NaiveDateTime>,
     pub update_time: Option<NaiveDateTime>,
 }
