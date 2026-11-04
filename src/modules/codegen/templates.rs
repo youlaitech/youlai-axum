@@ -10,9 +10,7 @@ pub struct GeneratedFile {
     pub scope: String,
 }
 
-// ═══════════════════════════════════════════════════════════
 // 后端模板 — 生成 SeaORM 实体 / DTO / Service / Router 四类 Rust 源码
-// ═══════════════════════════════════════════════════════════
 
 const ENTITY_TMPL: &str = r#"use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -25,14 +23,13 @@ use serde_json::Value as JsonValue;
 {% endif %}
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[sea_orm(table_name = "{{ table_name }}")]
 pub struct Model {
 {% for c in columns %}{% if c.is_pk %}    #[sea_orm(primary_key)]
-{% endif %}    pub {{ c.column_name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
-{% endfor %}
+{% endif %}    pub {{ c.rust_field_name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
+{% endfor -%}
 }
-
-pub type {{ entity_name }} = Model;
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
@@ -40,35 +37,35 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 "#;
 
-const DTO_TMPL: &str = r#"use serde::{Deserialize, Serialize};
+const DTO_TMPL: &str = r#"use serde::Deserialize;
 use validator::Validate;
-{% if has_datetime %}
-use chrono::NaiveDateTime;
-{% endif %}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct {{ entity_name }}Query {
     pub page_num: Option<u64>,
     pub page_size: Option<u64>,
-{% for c in columns %}{% if not c.is_pk and c.is_show_in_query %}    pub {{ c.column_name }}: Option<String>,
-{% endif %}{% endfor %}
+{% for c in columns %}{% if c.is_show_in_query %}    #[serde(default, deserialize_with = "crate::util::opt_string_from_any")]
+    pub {{ c.rust_field_name }}: Option<String>,
+{% endif %}{% endfor -%}
 }
 
 #[derive(Debug, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct {{ entity_name }}Form {
-{% for c in columns %}{% if not c.is_pk %}{% if c.is_string and c.is_required %}    #[validate(length(min = 1))]
-{% endif %}    pub {{ c.column_name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
-{% endif %}{% endfor %}
+{% for c in columns %}{% if c.is_editable %}{% if c.is_string and c.is_required %}    #[validate(length(min = 1))]
+{% endif %}    pub {{ c.rust_field_name }}: {% if c.is_nullable %}Option<{% endif %}{{ c.rust_type }}{% if c.is_nullable %}>{% endif %},
+{% endif %}{% endfor -%}
 }
 "#;
 
 const SERVICE_TMPL: &str = r#"use sea_orm::*;
+
 use crate::error::{AppError, AppResult};
 use crate::result_code::ResultCode;
-use super::entity::*;
+
 use super::dto::*;
+use crate::entity::{{ table_name }}::*;
 
 pub struct {{ entity_name }}Service<'a> {
     db: &'a DatabaseConnection,
@@ -77,113 +74,151 @@ pub struct {{ entity_name }}Service<'a> {
 impl<'a> {{ entity_name }}Service<'a> {
     pub fn new(db: &'a DatabaseConnection) -> Self { Self { db } }
 
-    pub async fn list(&self, query: &{{ entity_name }}Query) -> AppResult<(Vec<{{ entity_name }}>, u64)> {
-        let mut select = Entity::find();
-{% for c in columns %}{% if not c.is_pk and c.is_show_in_query %}{% if c.is_string %}        if let Some(ref v) = query.{{ c.column_name }} { if !v.is_empty() { select = select.filter(Column::{{ c.column_name }}.contains(v)); } }
-{% elif c.is_integer %}        if let Some(ref v) = query.{{ c.column_name }} { if let Ok(val) = v.parse::<i64>() { select = select.filter(Column::{{ c.column_name }}.eq(val)); } }
-{% elif c.is_bool %}        if let Some(ref v) = query.{{ c.column_name }} { if let Ok(val) = v.parse::<bool>() { select = select.filter(Column::{{ c.column_name }}.eq(val)); } }
-{% endif %}{% endif %}{% endfor %}
-        let total = select.clone().count(self.db).await?;
-        let page = query.page_num.unwrap_or(1).max(1) as u64;
-        let size = query.page_size.unwrap_or(10).min(1000) as u64;
-        let list = select.offset((page - 1) * size).limit(size).all(self.db).await?;
+    pub async fn list(&self, query: &{{ entity_name }}Query) -> AppResult<(Vec<Model>, u64)> {
+        let mut select = Entity::find(){% if has_soft_delete %}.filter(Column::IsDeleted.eq(0)){% endif %};
+{% for c in columns %}{% if c.is_show_in_query %}{% if c.is_string %}        if let Some(ref v) = query.{{ c.rust_field_name }} { select = select.filter(Column::{{ c.column_pascal }}.contains(v)); }
+{% elif c.is_integer %}        if let Some(ref v) = query.{{ c.rust_field_name }} { if let Ok(val) = v.parse::<{{ c.rust_type }}>() { select = select.filter(Column::{{ c.column_pascal }}.eq(val)); } }
+{% elif c.is_bool %}        if let Some(ref v) = query.{{ c.rust_field_name }} { let val = v == "1" || v.eq_ignore_ascii_case("true"); select = select.filter(Column::{{ c.column_pascal }}.eq(val)); }
+{% endif %}{% endif %}{% endfor %}        let total = select.clone().count(self.db).await?;
+        let page = query.page_num.unwrap_or(1).max(1);
+        let size = query.page_size.unwrap_or(10).clamp(1, 1000);
+        let list = select.order_by_desc(Column::{{ pk_column_pascal }}).offset((page - 1) * size).limit(size).all(self.db).await?;
         Ok((list, total))
     }
 
-    pub async fn create(&self, form: &{{ entity_name }}Form) -> AppResult<i64> {
-        let active = form_to_active(form);
-        let model = active.insert(self.db).await?;
-        Ok(model.{{ pk_name }})
+    pub async fn create(&self, form: &{{ entity_name }}Form, user_id: i64) -> AppResult<i64> {
+        let mut active = form_to_active(form);
+{% if has_create_by %}        active.create_by = Set({% if create_by_nullable %}Some(user_id){% else %}user_id{% endif %});
+{% endif %}{% if has_update_by %}        active.update_by = Set({% if update_by_nullable %}Some(user_id){% else %}user_id{% endif %});
+{% endif %}{% if has_create_time %}        active.create_time = Set({% if create_time_nullable %}Some(chrono::Utc::now().naive_utc()){% else %}chrono::Utc::now().naive_utc(){% endif %});
+{% endif %}{% if has_update_time %}        active.update_time = Set({% if update_time_nullable %}Some(chrono::Utc::now().naive_utc()){% else %}chrono::Utc::now().naive_utc(){% endif %});
+{% endif %}{% if has_soft_delete %}        active.is_deleted = Set(0);
+{% endif %}        let model = active.insert(self.db).await?;
+        Ok(model.{{ pk_field_name }})
     }
 
-    pub async fn get(&self, id: i64) -> AppResult<Option<{{ entity_name }}>> {
-        Ok(Entity::find_by_id(id).one(self.db).await?)
+    pub async fn get(&self, id: i64) -> AppResult<Option<Model>> {
+        Ok(Entity::find_by_id(id){% if has_soft_delete %}.filter(Column::IsDeleted.eq(0)){% endif %}.one(self.db).await?)
     }
 
-    pub async fn update(&self, id: i64, form: &{{ entity_name }}Form) -> AppResult<()> {
-        let mut active: ActiveModel = Entity::find_by_id(id)
+    pub async fn update(&self, id: i64, form: &{{ entity_name }}Form, user_id: i64) -> AppResult<()> {
+        let mut active: ActiveModel = Entity::find_by_id(id){% if has_soft_delete %}.filter(Column::IsDeleted.eq(0)){% endif %}
             .one(self.db).await?
-            .ok_or_else(|| AppError::Business(ResultCode::AccountNotFound, None))?
+            .ok_or_else(|| AppError::Business(ResultCode::DataNotFound, None))?
             .into();
-{% for c in columns %}{% if not c.is_pk %}        active.{{ c.column_name }} = Set(form.{{ c.column_name }}.clone());
-{% endif %}{% endfor %}        active.update(self.db).await?;
+{% for c in columns %}{% if c.is_editable %}        active.{{ c.rust_field_name }} = Set(form.{{ c.rust_field_name }}.clone());
+{% endif %}{% endfor %}{% if has_update_by %}        active.update_by = Set({% if update_by_nullable %}Some(user_id){% else %}user_id{% endif %});
+{% endif %}{% if has_update_time %}        active.update_time = Set({% if update_time_nullable %}Some(chrono::Utc::now().naive_utc()){% else %}chrono::Utc::now().naive_utc(){% endif %});
+{% endif %}        active.update(self.db).await?;
         Ok(())
     }
 
-    pub async fn delete(&self, id: i64) -> AppResult<u64> {
-        Ok(Entity::delete_by_id(id).exec(self.db).await?.rows_affected)
-    }
+    pub async fn delete(&self, ids: &str) -> AppResult<u64> {
+        let id_list: Vec<i64> = ids.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+        if id_list.is_empty() {
+            return Err(AppError::Business(ResultCode::RequestRequiredParameterIsEmpty, None));
+        }
+{% if has_soft_delete %}        Ok(sea_orm::Update::many(Entity)
+            .col_expr(Column::IsDeleted, sea_orm::sea_query::Expr::value(1)){% if has_update_time %}
+            .col_expr(Column::UpdateTime, sea_orm::sea_query::Expr::value(chrono::Utc::now().naive_utc())){% endif %}
+            .filter(Column::{{ pk_column_pascal }}.is_in(id_list))
+            .exec(self.db).await?.rows_affected)
+{% else %}        Ok(Entity::delete_many().filter(Column::{{ pk_column_pascal }}.is_in(id_list)).exec(self.db).await?.rows_affected)
+{% endif %}    }
 }
 
 fn form_to_active(form: &{{ entity_name }}Form) -> ActiveModel {
     ActiveModel {
-{% for c in columns %}{% if not c.is_pk %}        {{ c.column_name }}: Set(form.{{ c.column_name }}.clone()),
+{% for c in columns %}{% if c.is_editable %}        {{ c.rust_field_name }}: Set(form.{{ c.rust_field_name }}.clone()),
 {% endif %}{% endfor %}        ..Default::default()
     }
 }
 "#;
 
-const MOD_TMPL: &str = r#"pub mod entity;
-pub mod dto;
+const MOD_TMPL: &str = r#"pub mod dto;
 pub mod service;
 
 use axum::{
     extract::{Path, Query, State},
-    routing::{delete, get, post, put},
+    middleware,
+    routing::{get, put},
     Json, Router,
 };
-use serde::Serialize;
-use crate::state::AppState;
-use crate::error::{AppError, AppResult};
-use crate::response::Result;
-use crate::result_code::ResultCode;
-use dto::*;
-use service::{{ entity_name }}Service;
+use validator::Validate;
 
-#[derive(Serialize)]
-pub struct PageResult<T: Serialize> {
-    pub list: Vec<T>,
-    pub total: u64,
-}
+use crate::error::{AppError, AppResult};
+use crate::modules::auth::extractor::AuthUser;
+use crate::modules::auth::permission::require_perm;
+use crate::response::{PageResult, Result};
+use crate::result_code::ResultCode;
+use crate::state::AppState;
+
+use crate::entity::{{ table_name }}::Model;
+use self::dto::*;
+use self::service::{{ entity_name }}Service;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/v1/{{ entity_kebab }}", get(list).post(create))
-        .route("/api/v1/{{ entity_kebab }}/{id}", get(get_one).put(update).delete(delete_one))
-        .route("/api/v1/{{ entity_kebab }}/{id}/form", get(get_one))
+        .route(
+            "/api/v1/{{ entity_kebab_plural }}",
+            get(list)
+                .route_layer(middleware::from_fn(require_perm("{{ permission_prefix }}:list")))
+                .post(create)
+                .route_layer(middleware::from_fn(require_perm("{{ permission_prefix }}:create"))),
+        )
+        .route(
+            "/api/v1/{{ entity_kebab_plural }}/{id}/form",
+            get(get_one).route_layer(middleware::from_fn(require_perm("{{ permission_prefix }}:update"))),
+        )
+        .route(
+            "/api/v1/{{ entity_kebab_plural }}/{id}",
+            put(update)
+                .route_layer(middleware::from_fn(require_perm("{{ permission_prefix }}:update")))
+                .delete(delete_one)
+                .route_layer(middleware::from_fn(require_perm("{{ permission_prefix }}:delete"))),
+        )
 }
 
-async fn list(State(state): State<AppState>, Query(q): Query<{{ entity_name }}Query>) -> AppResult<Json<Result<PageResult<{{ entity_name }}>>>> {
+async fn list(State(state): State<AppState>, Query(q): Query<{{ entity_name }}Query>) -> AppResult<Json<PageResult<Model>>> {
     let (data, total) = {{ entity_name }}Service::new(&state.db).list(&q).await?;
-    Ok(Json(Result::success(PageResult { list: data, total })))
+    Ok(Json(PageResult::success(data, total)))
 }
 
-async fn get_one(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<Result<{{ entity_name }}>>> {
+async fn get_one(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<Result<Model>>> {
     let data = {{ entity_name }}Service::new(&state.db).get(id).await?
-        .ok_or_else(|| AppError::Business(ResultCode::AccountNotFound, None))?;
+        .ok_or_else(|| AppError::Business(ResultCode::DataNotFound, None))?;
     Ok(Json(Result::success(data)))
 }
 
-async fn create(State(state): State<AppState>, Json(form): Json<{{ entity_name }}Form>) -> AppResult<Json<Result<i64>>> {
-    let id = {{ entity_name }}Service::new(&state.db).create(&form).await?;
+async fn create(
+    State(state): State<AppState>,
+    AuthUser(user): AuthUser,
+    Json(form): Json<{{ entity_name }}Form>,
+) -> AppResult<Json<Result<i64>>> {
+    form.validate()?;
+    let id = {{ entity_name }}Service::new(&state.db).create(&form, user.user_id).await?;
     Ok(Json(Result::success(id)))
 }
 
-async fn update(State(state): State<AppState>, Path(id): Path<i64>, Json(form): Json<{{ entity_name }}Form>) -> AppResult<Json<Result<()>>> {
-    {{ entity_name }}Service::new(&state.db).update(id, &form).await?;
+async fn update(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    AuthUser(user): AuthUser,
+    Json(form): Json<{{ entity_name }}Form>,
+) -> AppResult<Json<Result<()>>> {
+    form.validate()?;
+    {{ entity_name }}Service::new(&state.db).update(id, &form, user.user_id).await?;
     Ok(Json(Result::success_empty()))
 }
 
-async fn delete_one(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Json<Result<u64>>> {
-    let n = {{ entity_name }}Service::new(&state.db).delete(id).await?;
-    Ok(Json(Result::success(n)))
+async fn delete_one(State(state): State<AppState>, Path(ids): Path<String>) -> AppResult<Json<Result<u64>>> {
+    let count = {{ entity_name }}Service::new(&state.db).delete(&ids).await?;
+    Ok(Json(Result::success(count)))
 }
 "#;
 
-// ═══════════════════════════════════════════════════════════
 // 前端模板 — 直接从 boot .vm 搬运，仅替换模板语法
 // 使用 [[ ]] 输出分隔符，避免与 Vue {{ }} 冲突
-// ═══════════════════════════════════════════════════════════
 
 // ── TS: API 调用层 ──
 
@@ -191,13 +226,13 @@ const TS_API_TMPL: &str = r##"import request from "@/utils/request";
 import type { [[ entity_name ]]Form, [[ entity_name ]]QueryParams, [[ entity_name ]]Item } from "./types";
 import type { PageResult } from "@/api/common";
 
-const [[ entity_upper_snake ]]_BASE_URL = "/api/v1/[[ entity_kebab ]]";
+const BASE_URL = "/api/v1/[[ entity_kebab_plural ]]";
 
 const [[ entity_name ]]API = {
     /** 获取[[ business_name ]]分页数据 */
     getPage(queryParams?: [[ entity_name ]]QueryParams) {
         return request<unknown, PageResult<[[ entity_name ]]Item>>({
-            url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+            url: `${BASE_URL}`,
             method: "get",
             params: queryParams,
         });
@@ -205,30 +240,30 @@ const [[ entity_name ]]API = {
     /** 获取[[ business_name ]]表单数据 */
     getFormData(id: string) {
         return request<unknown, [[ entity_name ]]Form>({
-            url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}/form`,
+            url: `${BASE_URL}/${id}/form`,
             method: "get",
         });
     },
     /** 新增[[ business_name ]] */
     create(data: [[ entity_name ]]Form) {
         return request({
-            url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+            url: `${BASE_URL}`,
             method: "post",
             data,
         });
     },
     /** 更新[[ business_name ]] */
-     update(id: string, data: [[ entity_name ]]Form) {
+    update(id: string, data: [[ entity_name ]]Form) {
         return request({
-            url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}`,
+            url: `${BASE_URL}/${id}`,
             method: "put",
             data,
         });
     },
     /** 批量删除[[ business_name ]]，多个以英文逗号(,)分割 */
-     deleteByIds(ids: string) {
+    deleteByIds(ids: string) {
         return request({
-            url: `${[[ entity_upper_snake ]]_BASE_URL}/${ids}`,
+            url: `${BASE_URL}/${ids}`,
             method: "delete",
         });
     }
@@ -245,25 +280,23 @@ const TS_TYPES_TMPL: &str = r##"/**
  * [[ entity_name ]] [[ business_name ]]类型定义
  */
 
-import type { BaseQueryParams } from "@/api/common";
+import type { PageQuery } from "@/api/common";
 
 /** [[ business_name ]]查询参数 */
-export interface [[ entity_name ]]QueryParams extends BaseQueryParams {
-{% for c in columns %}{% if c.is_show_in_query %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */{% endif %}
-
-{% if c.form_type_name == "DATE" or c.form_type_name == "DATE_TIME" %}{% if c.query_type_name == "BETWEEN" %}  [[ c.field_name ]]?: [string, string];
+export interface [[ entity_name ]]QueryParams extends PageQuery {
+{% for c in columns %}{% if c.is_show_in_query %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
+{% endif %}{% if c.form_type_name == "DATE" or c.form_type_name == "DATE_TIME" %}{% if c.query_type_name == "BETWEEN" %}  [[ c.field_name ]]?: [string, string];
 {% else %}  [[ c.field_name ]]?: [[ c.ts_type ]];
 {% endif %}{% else %}  [[ c.field_name ]]?: [[ c.ts_type ]];
-{% endif %}{% endif %}{% endfor %}
+{% endif %}{% endif %}{% endfor -%}
 }
 
 /** [[ business_name ]]表单对象 */
 export interface [[ entity_name ]]Form {
   id?: string;
-{% for c in columns %}{% if c.is_show_in_form %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */{% endif %}
-
-  [[ c.field_name ]]?: [[ c.ts_type ]];
-{% endif %}{% endfor %}
+{% for c in columns %}{% if c.is_show_in_form %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
+{% endif %}  [[ c.field_name ]]?: [[ c.ts_type ]];
+{% endif %}{% endfor -%}
 }
 
 /** [[ business_name ]]详情对象 */
@@ -271,10 +304,9 @@ export type [[ entity_name ]]Detail = [[ entity_name ]]Item & [[ entity_name ]]F
 
 /** [[ business_name ]]列表项 */
 export interface [[ entity_name ]]Item {
-{% for c in columns %}{% if c.is_show_in_list %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */{% endif %}
-
-  [[ c.field_name ]]?: [[ c.ts_type ]];
-{% endif %}{% endfor %}
+{% for c in columns %}{% if c.is_show_in_list %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
+{% endif %}  [[ c.field_name ]]?: [[ c.ts_type ]];
+{% endif %}{% endfor -%}
 }
 "##;
 
@@ -319,8 +351,8 @@ const TS_CLASSIC_VUE_TMPL: &str = r##"<template>
     <el-card ref="tableWrapperRef" class="page-content" shadow="never">
       <div class="page-toolbar">
         <div class="page-toolbar__left">
-          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:create']" type="primary" @click="handleCreateClick()">新增</el-button>
-          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" :disabled="!hasSelection" @click="handleBatchDelete()">删除</el-button>
+          <el-button v-hasPerm="['[[ permission_prefix ]]:create']" type="primary" @click="handleCreateClick()">新增</el-button>
+          <el-button v-hasPerm="['[[ permission_prefix ]]:delete']" type="danger" :disabled="!hasSelection" @click="handleBatchDelete()">删除</el-button>
         </div>
         <div class="page-toolbar__right">
           <el-tooltip content="刷新" placement="top">
@@ -343,8 +375,8 @@ const TS_CLASSIC_VUE_TMPL: &str = r##"<template>
 {% else %}        <el-table-column key="[[ c.field_name ]]" label="[[ c.field_comment ]]" prop="[[ c.field_name ]]" min-width="150" align="center" />
 {% endif %}{% endif %}{% endfor %}        <el-table-column fixed="right" label="操作" width="180">
           <template #default="scope">
-            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:update']" type="primary" size="small" link @click="handleEditClick(String(scope.row.id))">编辑</el-button>
-            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" size="small" link @click="handleDelete(String(scope.row.id))">删除</el-button>
+            <el-button v-hasPerm="['[[ permission_prefix ]]:update']" type="primary" size="small" link @click="handleEditClick(String(scope.row.id))">编辑</el-button>
+            <el-button v-hasPerm="['[[ permission_prefix ]]:delete']" type="danger" size="small" link @click="handleDelete(String(scope.row.id))">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -533,13 +565,13 @@ onMounted(() => {
 
 const JS_API_TMPL: &str = r##"import request from "@/utils/request";
 
-const [[ entity_upper_snake ]]_BASE_URL = "/api/v1/[[ entity_kebab ]]";
+const BASE_URL = "/api/v1/[[ entity_kebab_plural ]]";
 
 const [[ entity_name ]]API = {
   /** 获取[[ business_name ]]分页数据 */
   getPage(queryParams) {
     return request({
-      url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+      url: `${BASE_URL}`,
       method: "get",
       params: queryParams,
     });
@@ -551,7 +583,7 @@ const [[ entity_name ]]API = {
    */
   getFormData(id) {
     return request({
-      url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}/form`,
+      url: `${BASE_URL}/${id}/form`,
       method: "get",
     });
   },
@@ -562,7 +594,7 @@ const [[ entity_name ]]API = {
    */
   create(data) {
     return request({
-      url: `${[[ entity_upper_snake ]]_BASE_URL}`,
+      url: `${BASE_URL}`,
       method: "post",
       data,
     });
@@ -575,7 +607,7 @@ const [[ entity_name ]]API = {
    */
   update(id, data) {
     return request({
-      url: `${[[ entity_upper_snake ]]_BASE_URL}/${id}`,
+      url: `${BASE_URL}/${id}`,
       method: "put",
       data,
     });
@@ -587,7 +619,7 @@ const [[ entity_name ]]API = {
    */
   deleteByIds(ids) {
     return request({
-      url: `${[[ entity_upper_snake ]]_BASE_URL}/${ids}`,
+      url: `${BASE_URL}/${ids}`,
       method: "delete",
     });
   },
@@ -637,8 +669,8 @@ const JS_CLASSIC_VUE_TMPL: &str = r##"<template>
     <el-card ref="tableWrapperRef" class="page-content" shadow="never">
       <div class="page-toolbar">
         <div class="page-toolbar__left">
-          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:create']" type="primary" @click="handleCreateClick()">新增</el-button>
-          <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" :disabled="!hasSelection" @click="handleBatchDelete()">删除</el-button>
+          <el-button v-hasPerm="['[[ permission_prefix ]]:create']" type="primary" @click="handleCreateClick()">新增</el-button>
+          <el-button v-hasPerm="['[[ permission_prefix ]]:delete']" type="danger" :disabled="!hasSelection" @click="handleBatchDelete()">删除</el-button>
         </div>
         <div class="page-toolbar__right">
           <el-tooltip content="刷新" placement="top">
@@ -661,8 +693,8 @@ const JS_CLASSIC_VUE_TMPL: &str = r##"<template>
 {% else %}        <el-table-column key="[[ c.field_name ]]" label="[[ c.field_comment ]]" prop="[[ c.field_name ]]" min-width="150" align="center" />
 {% endif %}{% endif %}{% endfor %}        <el-table-column fixed="right" label="操作" width="180">
           <template #default="scope">
-            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:update']" type="primary" size="small" link @click="handleEditClick(String(scope.row.id))">编辑</el-button>
-            <el-button v-hasPerm="['[[ module_name ]]:[[ entity_kebab ]]:delete']" type="danger" size="small" link @click="handleDelete(String(scope.row.id))">删除</el-button>
+            <el-button v-hasPerm="['[[ permission_prefix ]]:update']" type="primary" size="small" link @click="handleEditClick(String(scope.row.id))">编辑</el-button>
+            <el-button v-hasPerm="['[[ permission_prefix ]]:delete']" type="danger" size="small" link @click="handleDelete(String(scope.row.id))">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -899,7 +931,7 @@ const searchConfig: CrudSearchConfig = {
 };
 
 const tableConfig: CrudTableConfig<[[ entity_name ]]QueryParams, [[ entity_name ]]Item> = {
-  permissionPrefix: "[[ module_name ]]:[[ entity_kebab ]]",
+  permissionPrefix: "[[ permission_prefix ]]",
   table: { border: true },
   fetchData: [[ entity_name ]]API.getPage,
   deleteByIds: [[ entity_name ]]API.deleteByIds,
@@ -1021,7 +1053,7 @@ const searchConfig = {
 };
 
 const tableConfig = {
-  permissionPrefix: "[[ module_name ]]:[[ entity_kebab ]]",
+  permissionPrefix: "[[ permission_prefix ]]",
   table: { border: true },
   fetchData: [[ entity_name ]]API.getPage,
   deleteByIds: [[ entity_name ]]API.deleteByIds,
@@ -1094,9 +1126,7 @@ function loadFormData(row) {
 </script>
 "#;
 
-// ═══════════════════════════════════════════════════════════
 // 渲染入口
-// ═══════════════════════════════════════════════════════════
 
 /// 渲染全部模板（后端 Rust + 前端 Vue3）
 ///
@@ -1115,12 +1145,13 @@ pub fn render(meta: &TableMeta, page_type: &str, frontend_type: &str) -> anyhow:
         let ctx = Context::from_serialize(meta)?;
 
         let base = format!("src/modules/{}/{}", meta.module_name, meta.entity_lower);
-        for (tpl, fname) in [
-            ("entity", "entity.rs"),
-            ("dto", "dto.rs"),
-            ("service", "service.rs"),
-            ("mod", "mod.rs"),
-        ] {
+        out.push(GeneratedFile {
+            path: "src/entity".into(),
+            file_name: format!("{}.rs", meta.table_name),
+            content: tera.render("entity", &ctx)?,
+            scope: "backend".into(),
+        });
+        for (tpl, fname) in [("dto", "dto.rs"), ("service", "service.rs"), ("mod", "mod.rs")] {
             out.push(GeneratedFile {
                 path: base.clone(),
                 file_name: fname.into(),

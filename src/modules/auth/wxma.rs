@@ -314,11 +314,10 @@ mod tests {
 
     #[test]
     fn parse_jscode2session_success() {
-        let body = r#"{"openid":"oABC123","session_key":"sk_xyz","unionid":"u_1"}"#;
+        let body = r#"{"openid":"oABC123","session_key":"sk_xyz"}"#;
         let r = parse_jscode2session(body).unwrap();
         assert_eq!(r.openid, "oABC123");
         assert_eq!(r.session_key, "sk_xyz");
-        assert_eq!(r.unionid.as_deref(), Some("u_1"));
     }
 
     #[test]

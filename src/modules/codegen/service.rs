@@ -13,7 +13,9 @@ use crate::entity::{gen_table, gen_table_column};
 use crate::error::{AppError, AppResult};
 use super::dto::{ColumnVO, GenConfigForm, GenConfigVO, PreviewVO};
 use super::templates;
+use crate::modules::system::menu::service::MenuService;
 use crate::result_code::ResultCode;
+use crate::util::{kebab_case, plural_kebab, snake_case};
 
 // ── 模板上下文 ──
 
@@ -21,8 +23,11 @@ use crate::result_code::ResultCode;
 #[derive(Debug, Clone, Serialize)]
 pub struct FieldMeta {
     pub column_name: String,
+    pub column_pascal: String,
+    pub rust_field_name: String,
     pub column_type: String,
     pub field_name: String,
+    pub default_field_name: String,
     pub field_type: String,
     pub field_comment: String,
     pub ts_type: String,
@@ -35,6 +40,8 @@ pub struct FieldMeta {
     pub dict_type: String,
     pub max_length: Option<i32>,
     pub is_pk: bool,
+    pub is_audit: bool,
+    pub is_editable: bool,
     pub is_nullable: bool,
     pub is_string: bool,
     pub is_datetime: bool,
@@ -51,8 +58,14 @@ pub struct TableMeta {
     pub entity_lower: String,
     pub module_name: String,
     pub entity_kebab: String,
+    /// 接口路径复数形式（如 sys-dicts），路由、前端 BASE_URL 与 Swagger 注解共用
+    pub entity_kebab_plural: String,
+    /// 权限标识前缀（如 sys:article），路由守卫、前端 v-hasPerm 与菜单按钮权限共用
+    pub permission_prefix: String,
     pub entity_upper_snake: String,
     pub pk_name: String,
+    pub pk_field_name: String,
+    pub pk_column_pascal: String,
     pub business_name: String,
     pub entity_comment: String,
     pub package_name: String,
@@ -63,6 +76,15 @@ pub struct TableMeta {
     pub has_uuid: bool,
     pub has_decimal: bool,
     pub has_required_field: bool,
+    pub has_soft_delete: bool,
+    pub has_create_time: bool,
+    pub has_update_time: bool,
+    pub has_create_by: bool,
+    pub has_update_by: bool,
+    pub create_time_nullable: bool,
+    pub update_time_nullable: bool,
+    pub create_by_nullable: bool,
+    pub update_by_nullable: bool,
 }
 
 /// 数据库原始列信息
@@ -77,6 +99,15 @@ struct RawColumn {
 
 /// 代码生成提示词路径
 const CODEGEN_SYSTEM_PROMPT_PATH: &str = "codegen/system.md";
+
+/// 未填写模块名时的默认模块（决定前端目录与菜单 component 前缀）
+const DEFAULT_MODULE_NAME: &str = "system";
+
+/// 未填写表前缀时的默认剥离前缀
+const DEFAULT_REMOVE_TABLE_PREFIX: &str = "sys_";
+
+/// 模块名 → 权限前缀，未配置时用模块名
+const PERMISSION_NAMESPACES: [(&str, &str); 1] = [("system", "sys")];
 
 /// 构造用户提示词，附带表结构与字段清单
 fn build_ai_user_prompt(config: &GenConfigVO, requirement: Option<&str>) -> String {
@@ -200,9 +231,7 @@ impl<'a> CodegenService<'a> {
         Self { db }
     }
 
-    // ═══════════════════════════════════════════
     // 表列表
-    // ═══════════════════════════════════════════
 
     /// 读取当前 schema 下所有基表（排除代码生成器自身表与 flyway 历史表）
     pub async fn list_tables(&self) -> AppResult<Vec<(String, String)>> {
@@ -232,9 +261,7 @@ impl<'a> CodegenService<'a> {
         Ok(list)
     }
 
-    // ═══════════════════════════════════════════
     // 元数据查询
-    // ═══════════════════════════════════════════
 
     /// 读取表字段元数据
     async fn get_columns(&self, table_name: &str) -> AppResult<Vec<RawColumn>> {
@@ -294,16 +321,12 @@ impl<'a> CodegenService<'a> {
     async fn load_meta_from_db_schema(&self, table_name: &str) -> AppResult<TableMeta> {
         let raw = Self::ensure_table_exists(self.get_columns(table_name).await?, table_name)?;
 
-        let entity_name = pascal_case(table_name);
-        let entity_lower = lower_first(&entity_name);
-        let module_name = table_name
-            .split('_')
-            .next()
-            .filter(|s| !s.is_empty())
-            .unwrap_or("app")
-            .to_string();
-        let entity_kebab = table_name.replace('_', "-");
-        let entity_upper_snake = table_name.to_uppercase();
+        // 实体名先去表前缀再转大驼峰，否则 sys_article 推导成 SysArticle，权限串多出一层模块名
+        let entity_name = default_entity_name(table_name, DEFAULT_REMOVE_TABLE_PREFIX);
+        let entity_lower = snake_case(&entity_name);
+        let module_name = DEFAULT_MODULE_NAME.to_string();
+        let entity_kebab = kebab_case(&entity_name);
+        let entity_upper_snake = entity_lower.to_uppercase();
         let pk_name = raw
             .iter()
             .find(|c| c.is_pk)
@@ -340,29 +363,35 @@ impl<'a> CodegenService<'a> {
                 has_uuid |= is_uuid_field;
                 has_decimal |= is_decimal_field;
 
-                let field_name = &c.name;
-                // 如果不是主键且不在排除列表中，默认显示
-                let is_non_system_field = !matches!(
-                    field_name.as_str(),
-                    "id" | "create_time" | "update_time" | "is_deleted"
+                let default_field_name = camel_case(&c.name);
+                let is_audit = matches!(
+                    c.name.as_str(),
+                    "create_time" | "update_time" | "create_by" | "update_by" | "is_deleted"
                 );
+                let is_editable = !c.is_pk && !is_audit;
+                let is_queryable = is_editable && (is_string || is_integer || is_bool);
 
                 FieldMeta {
                     column_name: c.name.clone(),
+                    column_pascal: pascal_case(&c.name),
+                    rust_field_name: rust_ident(&c.name),
                     column_type: format!("{}({})", c.udt, ""),
-                    field_name: c.name.clone(),
+                    field_name: default_field_name.clone(),
+                    default_field_name,
                     field_type: rust_type.clone(),
                     field_comment: c.comment.clone(),
                     ts_type: ts_type.to_string(),
-                    is_show_in_list: !c.is_pk && is_non_system_field,
-                    is_show_in_form: !c.is_pk,
-                    is_show_in_query: !c.is_pk && is_non_system_field,
-                    is_required: !c.is_nullable && !c.is_pk,
+                    is_show_in_list: is_editable,
+                    is_show_in_form: is_editable,
+                    is_show_in_query: is_queryable,
+                    is_required: !c.is_nullable && is_editable,
                     form_type_name: default_form_type(&rust_type, &c.name),
                     query_type_name: default_query_type(&rust_type),
                     dict_type: String::new(),
                     max_length: None,
                     is_pk: c.is_pk,
+                    is_audit,
+                    is_editable,
                     is_nullable: c.is_nullable,
                     is_string,
                     is_datetime,
@@ -374,6 +403,18 @@ impl<'a> CodegenService<'a> {
             .collect();
 
         let has_required_field = columns.iter().any(|c| c.is_required);
+        let audit_column = |name: &str| columns.iter().find(|c| c.column_name == name);
+        let has_soft_delete = audit_column("is_deleted").is_some();
+        let has_create_time = audit_column("create_time").is_some();
+        let has_update_time = audit_column("update_time").is_some();
+        let has_create_by = audit_column("create_by").is_some();
+        let has_update_by = audit_column("update_by").is_some();
+        let create_time_nullable = audit_column("create_time").is_some_and(|c| c.is_nullable);
+        let update_time_nullable = audit_column("update_time").is_some_and(|c| c.is_nullable);
+        let create_by_nullable = audit_column("create_by").is_some_and(|c| c.is_nullable);
+        let update_by_nullable = audit_column("update_by").is_some_and(|c| c.is_nullable);
+
+        let permission_prefix = resolve_permission_prefix(&module_name, &entity_name);
 
         Ok(TableMeta {
             table_name: table_name.to_string(),
@@ -381,7 +422,11 @@ impl<'a> CodegenService<'a> {
             entity_lower,
             module_name,
             entity_kebab,
+            entity_kebab_plural: plural_kebab(&entity_name),
+            permission_prefix,
             entity_upper_snake,
+            pk_field_name: rust_ident(&pk_name),
+            pk_column_pascal: pascal_case(&pk_name),
             pk_name,
             business_name: entity_name.clone(),
             entity_comment: entity_name,
@@ -393,12 +438,19 @@ impl<'a> CodegenService<'a> {
             has_uuid,
             has_decimal,
             has_required_field,
+            has_soft_delete,
+            has_create_time,
+            has_update_time,
+            has_create_by,
+            has_update_by,
+            create_time_nullable,
+            update_time_nullable,
+            create_by_nullable,
+            update_by_nullable,
         })
     }
 
-    // ═══════════════════════════════════════════
     // 配置 CRUD
-    // ═══════════════════════════════════════════
 
     /// 用 AI 推断代码生成配置，未推断出的字段沿用原有默认值
     pub async fn ai_fill_config(
@@ -545,8 +597,14 @@ impl<'a> CodegenService<'a> {
             .one(self.db)
             .await?;
 
+        // 新建行的实体名兜底走去前缀推导，否则 sys_article 会生成 SysArticle，权限串跟着变成 sys:sys-article
+        let remove_prefix = form
+            .remove_table_prefix
+            .as_deref()
+            .filter(|v| !v.trim().is_empty())
+            .unwrap_or(DEFAULT_REMOVE_TABLE_PREFIX);
+
         let table_id: i64 = if let Some(t) = existing {
-            // 更新
             let mut active: gen_table::ActiveModel = t.into();
             if let Some(ref v) = form.business_name { active.business_name = Set(v.clone()); }
             if let Some(ref v) = form.module_name { active.module_name = Set(Some(v.clone())); }
@@ -566,7 +624,11 @@ impl<'a> CodegenService<'a> {
                 module_name: Set(form.module_name.clone()),
                 package_name: Set(form.package_name.clone().unwrap_or_else(|| "com.youlai.rust".into())),
                 business_name: Set(form.business_name.clone().unwrap_or_else(|| table_name.to_string())),
-                entity_name: Set(form.entity_name.clone().unwrap_or_else(|| pascal_case(table_name))),
+                entity_name: Set(
+                    form.entity_name
+                        .clone()
+                        .unwrap_or_else(|| default_entity_name(table_name, remove_prefix)),
+                ),
                 author: Set(form.author.clone().unwrap_or_else(|| "youlai-axum".into())),
                 parent_menu_id: Set(form.parent_menu_id),
                 remove_table_prefix: Set(form.remove_table_prefix.clone()),
@@ -577,7 +639,6 @@ impl<'a> CodegenService<'a> {
             inserted.id
         };
 
-        // 删除旧字段配置
         gen_table_column::Entity::delete_many()
             .filter(gen_table_column::Column::TableId.eq(table_id))
             .exec(self.db)
@@ -608,6 +669,33 @@ impl<'a> CodegenService<'a> {
             }
         }
 
+        // 选了上级菜单就同步生成页面菜单与增删改查按钮，权限前缀与生成代码的守卫同源；
+        // 取值以落库后的配置为准，重复保存按路由名去重，不会挂出多份菜单
+        if let Some(parent_menu_id) = form.parent_menu_id.filter(|id| *id > 0) {
+            if let Some(saved) = gen_table::Entity::find_by_id(table_id).one(self.db).await? {
+                let module_name = saved
+                    .module_name
+                    .as_deref()
+                    .filter(|v| !v.trim().is_empty())
+                    .unwrap_or(DEFAULT_MODULE_NAME);
+                let business_name = saved.business_name.trim();
+                let business_name = if business_name.is_empty() {
+                    table_name
+                } else {
+                    business_name
+                };
+                MenuService::new(self.db)
+                    .add_menu_for_codegen(
+                        parent_menu_id,
+                        module_name,
+                        business_name,
+                        &saved.entity_name,
+                        &resolve_permission_prefix(module_name, &saved.entity_name),
+                    )
+                    .await?;
+            }
+        }
+
         Ok(())
     }
 
@@ -619,20 +707,16 @@ impl<'a> CodegenService<'a> {
             .await?;
 
         if let Some(t) = table_model {
-            // 删除字段配置
             gen_table_column::Entity::delete_many()
                 .filter(gen_table_column::Column::TableId.eq(t.id))
                 .exec(self.db)
                 .await?;
-            // 删除表配置
             gen_table::Entity::delete_by_id(t.id).exec(self.db).await?;
         }
         Ok(())
     }
 
-    // ═══════════════════════════════════════════
     // 预览与下载
-    // ═══════════════════════════════════════════
 
     /// 预览生成的代码
     pub async fn preview(
@@ -713,12 +797,16 @@ impl<'a> CodegenService<'a> {
                 if let Some(sc) = saved_columns.iter().find(|sc| {
                     sc.column_name.as_deref() == Some(mc.column_name.as_str())
                 }) {
-                    mc.field_name = sc.field_name.clone();
+                    let saved_name = sc.field_name.trim();
+                    if !saved_name.is_empty() {
+                        mc.field_name = camel_case(saved_name);
+                    }
                     let ft = sc.field_type.clone().unwrap_or_else(|| mc.field_type.clone());
                     mc.field_type = ft.clone();
                     mc.is_show_in_list = sc.is_show_in_list != 0;
                     mc.is_show_in_form = sc.is_show_in_form != 0;
-                    mc.is_show_in_query = sc.is_show_in_query != 0;
+                    mc.is_show_in_query = sc.is_show_in_query != 0
+                        && (mc.is_string || mc.is_integer || mc.is_bool);
                     mc.is_required = sc.is_required.unwrap_or(0) != 0;
                     mc.form_type_name = int_to_form_type_name(sc.form_type.unwrap_or(0));
                     mc.query_type_name = int_to_query_type_name(sc.query_type.unwrap_or(0));
@@ -730,10 +818,12 @@ impl<'a> CodegenService<'a> {
             meta.has_required_field = meta.columns.iter().any(|c| c.is_required);
         }
 
-        meta.entity_lower = lower_first(&meta.entity_name);
-        meta.entity_kebab = meta.table_name.replace('_', "-");
-        meta.entity_upper_snake = meta.table_name.to_uppercase();
+        meta.entity_lower = snake_case(&meta.entity_name);
+        meta.entity_kebab = kebab_case(&meta.entity_name);
+        meta.entity_kebab_plural = plural_kebab(&meta.entity_name);
+        meta.entity_upper_snake = meta.entity_lower.to_uppercase();
         meta.entity_comment = meta.business_name.clone();
+        meta.permission_prefix = resolve_permission_prefix(&meta.module_name, &meta.entity_name);
 
         Ok(meta)
     }
@@ -749,12 +839,32 @@ impl<'a> CodegenService<'a> {
     }
 }
 
-// ═══════════════════════════════════════════
 // 工具函数
-// ═══════════════════════════════════════════
 
 fn zip_err(e: zip::result::ZipError) -> AppError {
     AppError::Business(ResultCode::SystemError, Some(e.to_string()))
+}
+
+/// 按表名推导实体名：先去表前缀再转大驼峰（sys_article → Article）
+fn default_entity_name(table_name: &str, remove_prefix: &str) -> String {
+    pascal_case(trim_table_prefix(table_name, remove_prefix))
+}
+
+/// 去掉表名前缀（前缀为空或未命中时原样返回）
+fn trim_table_prefix<'a>(table_name: &'a str, remove_prefix: &str) -> &'a str {
+    if remove_prefix.is_empty() {
+        return table_name;
+    }
+    table_name.strip_prefix(remove_prefix).unwrap_or(table_name)
+}
+
+/// 权限标识前缀（如 sys:article）：路由守卫、前端 v-hasPerm 与菜单按钮权限共用同一个值
+fn resolve_permission_prefix(module_name: &str, entity_name: &str) -> String {
+    let namespace = PERMISSION_NAMESPACES
+        .iter()
+        .find(|(module, _)| *module == module_name)
+        .map_or(module_name, |(_, namespace)| *namespace);
+    format!("{namespace}:{}", kebab_case(entity_name))
 }
 
 /// 表名 → PascalCase 实体名（sys_user → SysUser）
@@ -770,12 +880,45 @@ fn pascal_case(s: &str) -> String {
         .collect()
 }
 
-/// 首字母小写
-fn lower_first(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        Some(f) => f.to_lowercase().collect::<String>() + chars.as_str(),
-        None => String::new(),
+/// 下划线/短横线命名 → camelCase
+fn camel_case(s: &str) -> String {
+    let mut out = String::new();
+    for (index, part) in s.split(['_', '-']).filter(|p| !p.is_empty()).enumerate() {
+        let mut chars = part.chars();
+        let Some(first) = chars.next() else {
+            continue;
+        };
+        if index == 0 {
+            out.extend(first.to_lowercase());
+        } else {
+            out.extend(first.to_uppercase());
+        }
+        out.push_str(chars.as_str());
+    }
+    if out.is_empty() {
+        s.to_lowercase()
+    } else {
+        out
+    }
+}
+
+/// 列名 → 合法 Rust 标识符（关键字加 r# 前缀）
+fn rust_ident(name: &str) -> String {
+    const KEYWORDS: &[&str] = &[
+        "abstract", "as", "async", "await", "become", "box", "break", "const", "continue", "do",
+        "dyn", "else", "enum", "extern", "false", "final", "fn", "for", "gen", "if", "impl", "in",
+        "let", "loop", "macro", "match", "mod", "move", "mut", "override", "priv", "pub", "ref",
+        "return", "static", "struct", "trait", "true", "try", "type", "typeof", "union",
+        "unsafe", "unsized", "use", "virtual", "where", "while", "yield",
+    ];
+
+    let candidate = if name.is_empty() { "field" } else { name };
+    if matches!(candidate, "self" | "Self" | "super" | "crate") {
+        format!("{candidate}_")
+    } else if KEYWORDS.contains(&candidate) {
+        format!("r#{candidate}")
+    } else {
+        candidate.to_string()
     }
 }
 

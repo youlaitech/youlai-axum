@@ -7,6 +7,7 @@ use crate::error::{AppError, AppResult};
 use crate::modules::auth::principal::Principal;
 use crate::modules::system::menu::dto::*;
 use crate::result_code::ResultCode;
+use crate::util::kebab_case;
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
 
@@ -272,7 +273,6 @@ impl<'a> MenuService<'a> {
             return Ok(build_route_tree(&all, 0));
         }
 
-        // 查询用户已启用的角色
         let role_ids: Vec<i64> = entity::sys_user_role::Entity::find()
             .filter(entity::sys_user_role::Column::UserId.eq(user.user_id))
             .all(self.db)
@@ -404,6 +404,60 @@ impl<'a> MenuService<'a> {
             .await?;
         }
         Ok(())
+    }
+
+    /// 代码生成保存配置时创建页面菜单与增删改查按钮；按路由名去重，重复保存配置不再挂出多份菜单
+    pub async fn add_menu_for_codegen(
+        &self,
+        parent_menu_id: i64,
+        module_name: &str,
+        business_name: &str,
+        entity_name: &str,
+        perm_prefix: &str,
+    ) -> AppResult<()> {
+        self.check_parent(parent_menu_id, "M").await?;
+
+        let duplicated = entity::sys_menu::Entity::find()
+            .filter(entity::sys_menu::Column::RouteName.eq(entity_name))
+            .one(self.db)
+            .await?
+            .is_some();
+        if duplicated {
+            return Ok(());
+        }
+
+        let parent = entity::sys_menu::Entity::find_by_id(parent_menu_id)
+            .one(self.db)
+            .await?
+            .ok_or_else(|| {
+                AppError::Business(
+                    ResultCode::AccessPermissionException,
+                    Some("上级菜单不存在".into()),
+                )
+            })?;
+
+        // 路由名与生成页面的 defineOptions({name}) 同名，keep-alive 才能命中缓存
+        let route_path = kebab_case(entity_name);
+        let tree_path = format!("{},{}", parent.tree_path.unwrap_or_default(), parent_menu_id);
+        let menu = entity::sys_menu::ActiveModel {
+            parent_id: Set(parent_menu_id),
+            name: Set(business_name.to_string()),
+            r#type: Set("M".to_string()),
+            route_name: Set(Some(entity_name.to_string())),
+            route_path: Set(Some(route_path.clone())),
+            component: Set(Some(format!("{module_name}/{route_path}/index"))),
+            visible: Set(Some(1)),
+            keep_alive: Set(Some(1)),
+            sort: Set(Some(self.next_sort(parent_menu_id).await?)),
+            tree_path: Set(Some(tree_path.clone())),
+            ..Default::default()
+        }
+        .insert(self.db)
+        .await?;
+
+        // 按钮沿用菜单管理的既有实现，保证字段与手工新建菜单一致
+        let button_tree_path = format!("{},{}", tree_path, menu.id);
+        self.save_crud_buttons(menu.id, perm_prefix, &button_tree_path).await
     }
 
     /// 用 AI 推断菜单的访问路径、权限标识与图标，命名风格参照同级菜单

@@ -219,7 +219,6 @@ impl<'a> NoticeService<'a> {
                 .await?;
         }
 
-        // 更新通知状态
         sea_orm::Update::many(entity::sys_notice::Entity)
             .col_expr(
                 entity::sys_notice::Column::PublishStatus,
