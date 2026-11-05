@@ -1,54 +1,31 @@
 <div align="center">
 
+# <img alt="youlai-rust" width="40" height="40" src="./docs/images/logo/logo.png" align="center"> youlai-rust
 
+**Rust 1.82 + Axum 0.8 Enterprise-Grade Permission Management Backend**
 
-# <img alt="youlai-rust" width="28" src="./docs/images/logo/logo.png" align="center"> youlai-rust
-
-
-
-[English](./README.en.md) · [简体中文](./README.md)
-
-
-
-**Enterprise-grade permission management backend based on Rust (Axum + SeaORM)**
-
-
+<br>
 
 [![Rust](https://img.shields.io/badge/Rust-1.82+-000000?logo=rust)](https://www.rust-lang.org/)
-
 [![Axum](https://img.shields.io/badge/Axum-0.8-4B8BBE)](https://github.com/tokio-rs/axum)
-
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-
 [![Redis](https://img.shields.io/badge/Redis-7.x-DC382D?logo=redis&logoColor=white)](https://redis.io/)
-
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue?logo=apache)](LICENSE)
-
 [![Gitee Star](https://gitee.com/youlaiorg/youlai-rust/badge/star.svg)](https://gitee.com/youlaiorg/youlai-rust/stargazers)
-
 [![GitHub Star](https://img.shields.io/github/stars/youlaitech/youlai-rust?style=social)](https://github.com/youlaitech/youlai-rust)
-
-
 
 </div>
 
-
-
-![](./docs/images/rainbow.png "rainbow.png")
-
-
+<p align="center"><img src="./docs/images/rainbow.png" alt="rainbow"></p>
 
 <div align="center">
 
-
-
-[🖥️ Live Preview](https://vue.youlai.tech) | [📱 Mobile Preview](https://app.youlai.tech) | [📖 Documentation](https://www.youlai.tech/docs/server/spring-boot/)
-
-
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-2D8CF0?style=for-the-badge\&logo=google-chrome\&logoColor=white)](https://admin.youlai.tech)
+[![Mobile Demo](https://img.shields.io/badge/Mobile%20Demo-19BE6B?style=for-the-badge\&logo=android\&logoColor=white)](https://app.youlai.tech)
+[![Documentation](https://img.shields.io/badge/Documentation-8B5CF6?style=for-the-badge\&logo=gitbook\&logoColor=white)](https://www.youlai.tech/docs/server/spring-boot/)
+[![简体中文](https://img.shields.io/badge/简体中文-00B4D8?style=for-the-badge\&logo=google-translate\&logoColor=white)](./README.md)
 
 </div>
-
-
 
 ## Introduction
 
@@ -321,7 +298,7 @@ api_key = "sk-xxx"
 
 | 📖 Full docs site | [www.youlai.tech](https://www.youlai.tech/) |
 
-| 🖥️ PC live preview | [vue.youlai.tech](https://vue.youlai.tech) |
+| 🖥️ PC live preview | [admin.youlai.tech](https://admin.youlai.tech) |
 
 | 📱 Mobile live preview | [app.youlai.tech](https://app.youlai.tech) |
 
