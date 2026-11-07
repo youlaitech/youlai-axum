@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img alt="youlai-axum" width="40" height="40" src="./docs/images/logo/logo.png" align="center"> youlai-axum
+# <img alt="youlai-axum" width="40" height="40" src="./docs/images/logo/logo.png" valign="middle"> youlai-axum
 
 **Rust 1.82 + Axum 0.8 企业级权限管理系统后端**
 
