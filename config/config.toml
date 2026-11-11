@@ -7,7 +7,7 @@ host = "0.0.0.0"
 port = 8000
 
 [database]
-url = "postgres://postgres:Q1w2e3r4@www.youlai.tech:15432/youlai_admin"
+url = "postgres://postgres:postgres@www.youlai.tech:15432/youlai_admin"
 max_connections = 20
 min_connections = 5
 
