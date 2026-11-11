@@ -49,7 +49,7 @@
 
 - 🌐 **Multi-language ecosystem** — shares the API spec and database schema with other language versions
 
-- 🔌 **Real-time communication** — SSE push: online user count, dictionary sync, notification broadcast
+- 🔌 **Real-time communication** — WebSocket push: online user count, dictionary sync, notification broadcast
 
 
 
@@ -209,7 +209,7 @@ youlai-rust/
 
 │   │   ├── web/             # Unified response / exception handling
 
-│   │   ├── sse/             # SSE push
+│   │   ├── sse/             # Realtime push
 
 │   │   ├── captcha/         # Graphic captcha
 
@@ -221,7 +221,7 @@ youlai-rust/
 
 │       ├── system/          # user / role / menu / dept / dict / config / notice / log
 
-│       ├── message/         # SSE push
+│       ├── message/         # Realtime push
 
 │       ├── file/            # file management
 
