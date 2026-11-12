@@ -22,6 +22,8 @@ pub trait TokenManager: Send + Sync {
     async fn validate_token(&self, token: &str) -> bool;
     async fn validate_refresh_token(&self, refresh_token: &str) -> bool;
     async fn refresh_token(&self, refresh_token: &str) -> Option<AuthenticationToken>;
+    /// 校验刷新令牌并取出用户 ID，供调用方回查最新角色与权限
+    async fn refresh_token_user_id(&self, refresh_token: &str) -> Option<i64>;
     async fn invalidate_token(&self, token: &str);
     async fn invalidate_user_sessions(&self, user_id: i64);
 }
@@ -113,6 +115,23 @@ impl TokenManager for JwtTokenManager {
         if claims.token_type != constants::token_type::ACCESS {
             return None;
         }
+
+        // 登出后的令牌进入黑名单，剩余有效期内不再被接受
+        let mut r = self.redis.lock().await;
+        let blocked: bool = redis::cmd("EXISTS")
+            .arg(format!(
+                "{}:{}",
+                constants::redis_key::TOKEN_BLACKLIST,
+                token
+            ))
+            .query_async(&mut *r)
+            .await
+            .unwrap_or(false);
+        drop(r);
+        if blocked {
+            return None;
+        }
+
         let data_scopes: Vec<crate::modules::auth::principal::RoleDataScope> =
             serde_json::from_value(claims.data_scopes.unwrap_or_default()).unwrap_or_default();
         Some(Principal {
@@ -137,10 +156,16 @@ impl TokenManager for JwtTokenManager {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &Validation::new(Algorithm::HS256),
         )
-        .is_ok()
+        .map(|data| data.claims.token_type == constants::token_type::REFRESH)
+        .unwrap_or(false)
     }
 
-    async fn refresh_token(&self, refresh_token: &str) -> Option<AuthenticationToken> {
+    async fn refresh_token(&self, _refresh_token: &str) -> Option<AuthenticationToken> {
+        // 刷新流程由 AuthService 回查用户后重新签发，避免复制旧凭证里的角色与权限
+        None
+    }
+
+    async fn refresh_token_user_id(&self, refresh_token: &str) -> Option<i64> {
         let claims = decode::<JwtClaims>(
             refresh_token,
             &DecodingKey::from_secret(self.secret.as_bytes()),
@@ -151,20 +176,23 @@ impl TokenManager for JwtTokenManager {
         if claims.token_type != constants::token_type::REFRESH {
             return None;
         }
-        let user = Principal {
-            user_id: claims.sub.parse().ok()?,
-            username: claims.username,
-            dept_id: claims.dept_id,
-            roles: claims.roles.into_iter().collect(),
-            perms: claims.perms,
-            is_root: claims.is_root,
-            avatar: claims.avatar,
-            ..Default::default()
-        };
-        Some(self.generate_token(&user).await)
+        claims.sub.parse().ok()
     }
 
-    async fn invalidate_token(&self, _token: &str) {}
+    async fn invalidate_token(&self, token: &str) {
+        // 写入黑名单，TTL 与访问令牌有效期一致，到期自动清理
+        let mut r = self.redis.lock().await;
+        let _: Result<(), _> = redis::cmd("SETEX")
+            .arg(format!(
+                "{}:{}",
+                constants::redis_key::TOKEN_BLACKLIST,
+                token
+            ))
+            .arg(self.access_ttl)
+            .arg(1)
+            .query_async(&mut *r)
+            .await;
+    }
 
     async fn invalidate_user_sessions(&self, user_id: i64) {
         let mut r = self.redis.lock().await;
@@ -279,9 +307,15 @@ impl TokenManager for RedisTokenManager {
         self.parse_token(refresh_token).await.is_some()
     }
 
-    async fn refresh_token(&self, refresh_token: &str) -> Option<AuthenticationToken> {
+    async fn refresh_token(&self, _refresh_token: &str) -> Option<AuthenticationToken> {
+        // 刷新流程由 AuthService 回查用户后重新签发，避免复制旧会话里的角色与权限
+        None
+    }
+
+    async fn refresh_token_user_id(&self, refresh_token: &str) -> Option<i64> {
         let user = self.parse_token(refresh_token).await?;
         let mut r = self.redis.lock().await;
+        // 刷新令牌一次性使用
         let _: () = redis::cmd("DEL")
             .arg(format!(
                 "{}:{}",
@@ -292,7 +326,7 @@ impl TokenManager for RedisTokenManager {
             .await
             .unwrap_or(());
         drop(r);
-        Some(self.generate_token(&user).await)
+        Some(user.user_id)
     }
 
     async fn invalidate_token(&self, token: &str) {

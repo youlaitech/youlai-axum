@@ -369,7 +369,7 @@ impl<'a> UserService<'a> {
             .arg(&code)
             .query_async(&mut r)
             .await?;
-        tracing::info!("sms code to {}: {}", mobile, code);
+        tracing::info!("短信验证码已生成，手机号 {}***", &mobile[..3.min(mobile.len())]);
         Ok(())
     }
 

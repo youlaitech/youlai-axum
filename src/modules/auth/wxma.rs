@@ -181,12 +181,15 @@ async fn jscode2session(cfg: &WxMaConfig, code: &str) -> AppResult<Jscode2Sessio
     let text = reqwest::get(&url)
         .await
         .map_err(|e| {
-            AppError::Business(ResultCode::SystemError, Some(format!("微信登录失败：{e}")))
+            // 上游错误可能包含带 secret 的 URL，只记日志不回显
+            tracing::error!("微信 jscode2session 请求失败: {e}");
+            AppError::Business(ResultCode::SystemError, Some("微信登录失败".into()))
         })?
         .text()
         .await
         .map_err(|e| {
-            AppError::Business(ResultCode::SystemError, Some(format!("微信登录失败：{e}")))
+            tracing::error!("微信 jscode2session 响应读取失败: {e}");
+            AppError::Business(ResultCode::SystemError, Some("微信登录失败".into()))
         })?;
     parse_jscode2session(&text)
 }

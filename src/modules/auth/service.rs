@@ -32,14 +32,18 @@ impl<'a> AuthService<'a> {
 
     /// 账号密码登录，校验验证码
     pub async fn login(&self, req: &LoginRequest) -> AppResult<LoginResp> {
-        // 验证码校验（若前端传入）
-        if let (Some(cid), Some(code)) = (&req.captcha_id, &req.captcha_code) {
-            if !crate::modules::auth::captcha::verify(self.redis, cid, code).await {
-                return Err(AppError::Business(
-                    ResultCode::UserVerificationCodeError,
-                    None,
-                ));
-            }
+        // 验证码必填，缺失与错误一律拒绝登录
+        let (Some(cid), Some(code)) = (&req.captcha_id, &req.captcha_code) else {
+            return Err(AppError::Business(
+                ResultCode::UserVerificationCodeError,
+                None,
+            ));
+        };
+        if !crate::modules::auth::captcha::verify(self.redis, cid, code).await {
+            return Err(AppError::Business(
+                ResultCode::UserVerificationCodeError,
+                None,
+            ));
         }
 
         // 查用户（未逻辑删除的）
@@ -128,17 +132,29 @@ impl<'a> AuthService<'a> {
             .arg(&code)
             .query_async(&mut r)
             .await?;
-        tracing::info!("sms code sent to {}: {}", &req.mobile, code);
+        tracing::info!("短信验证码已生成，手机号 {}***", &req.mobile[..3.min(req.mobile.len())]);
         Ok(())
     }
 
-    /// 使用 refresh token 换取新的 access token
+    /// 使用 refresh token 换取新的 access token：校验后按用户 ID 回查最新角色与权限
     pub async fn refresh_token(&self, req: &RefreshTokenRequest) -> AppResult<LoginResp> {
-        let token = self
+        let user_id = self
             .token_manager
-            .refresh_token(&req.refresh_token)
+            .refresh_token_user_id(&req.refresh_token)
             .await
             .ok_or_else(|| AppError::Business(ResultCode::RefreshTokenInvalid, None))?;
+
+        let user = entity::sys_user::Entity::find_by_id(user_id)
+            .filter(entity::sys_user::Column::IsDeleted.eq(0))
+            .one(self.db)
+            .await?
+            .ok_or_else(|| AppError::Business(ResultCode::AccountNotFound, None))?;
+        if user.status.unwrap_or_default() != 1 {
+            return Err(AppError::Business(ResultCode::AccountFrozen, None));
+        }
+
+        let details = self.build_user_details(&user).await?;
+        let token = self.token_manager.generate_token(&details).await;
         Ok(LoginResp {
             access_token: token.access_token,
             refresh_token: token.refresh_token,

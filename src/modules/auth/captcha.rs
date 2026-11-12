@@ -23,7 +23,9 @@ pub async fn generate(redis: &ConnectionManager) -> anyhow::Result<CaptchaResult
         c.add_chars(constants::CAPTCHA_LENGTH as u32);
         let code = c.chars_as_string().to_lowercase();
         let captcha_id = Uuid::new_v4().to_string();
-        let png = c.as_png().unwrap();
+        let png = c
+            .as_png()
+            .ok_or_else(|| anyhow::anyhow!("生成验证码图片失败"))?;
         (code, captcha_id, STANDARD.encode(&png))
     };
 

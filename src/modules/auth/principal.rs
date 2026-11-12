@@ -17,6 +17,8 @@ pub struct RoleDataScope {
 pub struct Principal {
     pub user_id: i64,
     pub username: String,
+    /// 密码哈希只在登录校验时使用，不写入 Redis 会话
+    #[serde(default, skip_serializing)]
     pub password: String,
     pub enabled: bool,
     pub dept_id: Option<i64>,

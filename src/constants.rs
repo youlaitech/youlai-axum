@@ -18,6 +18,8 @@ pub mod redis_key {
     pub const AUTH_TOKEN: &str = "auth:token";
     pub const JWT_VERSION: &str = "auth:jwt:version";
     pub const USER_SESSIONS: &str = "auth:user:sessions";
+    /// 登出后的访问令牌黑名单前缀，完整 Key 为 `auth:token:blacklist:{token}`
+    pub const TOKEN_BLACKLIST: &str = "auth:token:blacklist";
     pub const SYS_CONFIG: &str = "sys:config";
     /// 扫码登录票据 Key 前缀，完整 Key 为 `auth:qr_code:{ticket}`
     pub const QR_CODE_PREFIX: &str = "auth:qr_code";
@@ -25,7 +27,7 @@ pub mod redis_key {
     pub const WXMA_SESSION_KEY: &str = "auth:wxma:session_key";
 }
 
-/// 微信小程序的认证源标识，与配置保持一致
+/// 微信小程序的认证源标识
 pub const WECHAT_MINI_PROVIDER: &str = "wechat-mini-main";
 
 /// 手机/邮箱验证码 Redis Key 前缀（如 captcha:mobile:138...）
