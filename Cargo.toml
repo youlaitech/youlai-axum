@@ -1,6 +1,6 @@
 [package]
 name = "youlai-axum"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "youlai-axum admin backend — Axum + SeaORM + PostgreSQL"
 license = "Apache-2.0"
@@ -25,16 +25,14 @@ sea-orm = { version = "1.1", features = [
 ] }
 sea-orm-migration = "1.1"
 
-# Redis + 本地缓存
+# Redis
 redis = { version = "0.28", features = ["tokio-comp", "connection-manager"] }
-moka = { version = "0.12", features = ["future"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # 配置
-figment = { version = "0.10", features = ["toml", "env"] }
 toml = "0.8"
 
 # 日志 / 链路追踪
@@ -55,16 +53,12 @@ base64 = "0.22"
 # 数据校验
 validator = { version = "0.20", features = ["derive"] }
 
-# 限流
-tower_governor = "0.6"
-
 # Excel
 calamine = "0.26"
 rust_xlsxwriter = "0.79"
 
 # 对象存储 (S3 / RustFS)
 aws-sdk-s3 = "1"
-aws-config = "1"
 
 # 邮件
 lettre = { version = "0.11", default-features = false, features = [
@@ -75,9 +69,6 @@ lettre = { version = "0.11", default-features = false, features = [
 tera = "1"
 # 代码生成 zip 打包
 zip = "2"
-
-# 任务调度
-tokio-cron-scheduler = "0.13"
 
 # 工具
 chrono = { version = "0.4", features = ["serde"] }

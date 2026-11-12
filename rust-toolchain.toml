@@ -1,3 +1,4 @@
 [toolchain]
-channel = "stable"
+# 固定工具链版本，保证构建可复现
+channel = "1.96.1"
 components = ["rustfmt", "clippy"]
