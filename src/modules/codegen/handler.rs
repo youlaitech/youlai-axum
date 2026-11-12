@@ -21,7 +21,7 @@ pub async fn list_tables(State(state): State<AppState>) -> AppResult<Json<Result
         .map(|(table_name, table_comment)| crate::modules::codegen::dto::TableVO {
             table_name,
             table_comment,
-            engine: "InnoDB".into(),
+            engine: "PostgreSQL".into(),
             create_time: None,
         })
         .collect::<Vec<_>>();

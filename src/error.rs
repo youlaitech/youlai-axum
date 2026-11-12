@@ -48,7 +48,7 @@ impl IntoResponse for AppError {
             }
             AppError::Database(msg) => {
                 tracing::error!("database error: {msg}");
-                Result::failed(ResultCode::DatabaseExecutionError, Some(msg))
+                Result::failed(ResultCode::DatabaseExecutionError, None)
             }
             AppError::Other(e) => {
                 tracing::error!("{e:#}");

@@ -49,6 +49,35 @@ async fn init_redis(settings: &Settings) -> anyhow::Result<ConnectionManager> {
     Ok(manager)
 }
 
+/// 跨域层：来源由 CORS_ALLOWED_ORIGINS 配置（逗号分隔），未配置时仅放行本地开发前端
+fn cors_layer() -> CorsLayer {
+    let origins: Vec<axum::http::HeaderValue> = std::env::var("CORS_ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| {
+            "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
+                .to_string()
+        })
+        .split(',')
+        .filter_map(|origin| origin.trim().parse().ok())
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::PATCH,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+        ])
+        .allow_credentials(true)
+}
+
 /// 聚合业务 Router、OpenAPI 与全局 layer，返回未绑定监听端口的 Router
 pub fn build_router(state: AppState) -> Router {
     Router::new()
@@ -65,11 +94,11 @@ pub fn build_router(state: AppState) -> Router {
         ))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
-        .layer(CorsLayer::permissive())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_layer,
         ))
+        .layer(cors_layer())
         .with_state(state)
 }
 

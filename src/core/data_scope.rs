@@ -64,19 +64,17 @@ where
 }
 
 /// 获取部门及其所有子部门 ID 列表。
-/// 通过 `FIND_IN_SET(dept_id, tree_path) > 0` 匹配，避免 LIKE 前缀误匹配（如 dept_id=1 命中 "10,"）。
+/// 树路径形如 "0,1,2"，用逗号包裹后按完整节点匹配，避免 dept_id=1 命中 "10"。
 async fn get_dept_and_sub_ids(db: &DatabaseConnection, dept_id: i64) -> Vec<i64> {
     entity::sys_dept::Entity::find()
         .filter(entity::sys_dept::Column::IsDeleted.eq(0))
         .filter(
             Condition::any()
                 .add(entity::sys_dept::Column::Id.eq(dept_id))
-                .add(
-                    Expr::cust_with_values(
-                        "FIND_IN_SET($1, tree_path) > 0",
-                        vec![dept_id],
-                    ),
-                ),
+                .add(Expr::cust_with_values(
+                    "(',' || COALESCE(tree_path, '') || ',') LIKE ('%,' || $1 || ',%')",
+                    vec![dept_id],
+                )),
         )
         .all(db)
         .await

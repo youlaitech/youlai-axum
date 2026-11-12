@@ -107,6 +107,16 @@ pub async fn ws_connect(
         return StatusCode::UNAUTHORIZED.into_response();
     };
 
+    // 复核访问凭证，登出或过期后票据立即失效
+    if state
+        .token_manager
+        .parse_token(&grant.access_token)
+        .await
+        .is_none()
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
     let hub = state.message_hub.clone();
     let (rx, guard) = hub.connect(grant.user_id, grant.topics.clone()).await;
 
