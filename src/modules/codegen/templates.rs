@@ -286,15 +286,18 @@ import type { PageQuery } from "@/api/common";
 export interface [[ entity_name ]]QueryParams extends PageQuery {
 {% for c in columns %}{% if c.is_show_in_query %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
 {% endif %}{% if c.form_type_name == "DATE" or c.form_type_name == "DATE_TIME" %}{% if c.query_type_name == "BETWEEN" %}  [[ c.field_name ]]?: [string, string];
+{% elif c.query_type_name == "IN" %}  [[ c.field_name ]]?: string[];
 {% else %}  [[ c.field_name ]]?: [[ c.ts_type ]];
-{% endif %}{% else %}  [[ c.field_name ]]?: [[ c.ts_type ]];
-{% endif %}{% endif %}{% endfor -%}
+{% endif %}{% else %}{% if c.query_type_name == "IN" %}  [[ c.field_name ]]?: string[];
+{% elif c.query_type_name == "BETWEEN" %}  [[ c.field_name ]]: [ [[ c.ts_type ]] | null, [[ c.ts_type ]] | null ];
+{% else %}  [[ c.field_name ]]?: [[ c.ts_type ]];
+{% endif %}{% endif %}{% endif %}{% endfor -%}
 }
 
 /** [[ business_name ]]表单对象 */
 export interface [[ entity_name ]]Form {
   id?: string;
-{% for c in columns %}{% if c.is_show_in_form %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
+{% for c in columns %}{% if c.is_show_in_form and c.field_name != "id" %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
 {% endif %}  [[ c.field_name ]]?: [[ c.ts_type ]];
 {% endif %}{% endfor -%}
 }
@@ -304,7 +307,9 @@ export type [[ entity_name ]]Detail = [[ entity_name ]]Item & [[ entity_name ]]F
 
 /** [[ business_name ]]列表项 */
 export interface [[ entity_name ]]Item {
-{% for c in columns %}{% if c.is_show_in_list %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
+  /** 稳定主键，不受列表显示配置影响 */
+  id: string;
+{% for c in columns %}{% if c.is_show_in_list and c.field_name != "id" %}{% if c.field_comment != "" %}  /** [[ c.field_comment ]] */
 {% endif %}  [[ c.field_name ]]?: [[ c.ts_type ]];
 {% endif %}{% endfor -%}
 }
@@ -882,10 +887,23 @@ const TS_CRUD_VUE_TMPL: &str = r#"<template>
     :form-config="formConfig"
     :load-form-data="loadFormData"
   >
-{% for c in columns %}{% if c.is_show_in_query and c.dict_type %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
+{% for c in columns %}{% if c.is_show_in_query %}{% if c.query_type_name == "IN" %}{% if c.dict_type %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
+      <DictSelect v-model="formData[prop]" type="checkbox" code="[[ c.dict_type ]]" v-bind="attrs" />
+    </template>
+{% endif %}{% elif c.query_type_name == "BETWEEN" and c.form_type_name not in ("DATE", "DATE_TIME") %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
+      <div class="flex w-full items-center gap-2" v-bind="attrs">
+{% if c.ts_type == "number" %}        <el-input-number v-model="formData[prop][0]" placeholder="最小值" class="flex-1" />
+        <span class="text-[var(--el-text-color-placeholder)]">~</span>
+        <el-input-number v-model="formData[prop][1]" placeholder="最大值" class="flex-1" />
+{% else %}        <el-input v-model="formData[prop][0]" placeholder="开始值" clearable class="flex-1" />
+        <span class="text-[var(--el-text-color-placeholder)]">~</span>
+        <el-input v-model="formData[prop][1]" placeholder="结束值" clearable class="flex-1" />
+{% endif %}      </div>
+    </template>
+{% elif c.dict_type %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
       <DictSelect v-model="formData[prop]" code="[[ c.dict_type ]]" v-bind="attrs" />
     </template>
-{% endif %}{% endfor %}{% for c in columns %}{% if c.is_show_in_list and c.dict_type %}    <template #table-cell-[[ c.field_name ]]="{ row }">
+{% endif %}{% endif %}{% endfor %}{% for c in columns %}{% if c.is_show_in_list and c.dict_type %}    <template #table-cell-[[ c.field_name ]]="{ row }">
       <DictTag :model-value="row.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
     </template>
 {% endif %}{% endfor %}{% for c in columns %}{% if c.is_show_in_form and c.form_type_name != "HIDDEN" and c.dict_type %}    <template #form-[[ c.field_name ]]="{ formData, prop, attrs }">
@@ -911,18 +929,31 @@ const searchConfig: CrudSearchConfig = {
 {% for c in columns %}{% if c.is_show_in_query %}    {
       prop: "[[ c.field_name ]]",
       label: "[[ c.field_comment ]]",
-{% if c.dict_type %}      type: "custom",
+{% if c.query_type_name == "IN" %}{% if c.dict_type %}      type: "custom",
+      initialValue: [],
       attrs: { clearable: true },
-{% elif c.form_type_name == "DATE" or c.form_type_name == "DATE_TIME" %}      type: "date-picker",
-{% if c.query_type_name == "BETWEEN" %}      initialValue: [],
+{% else %}      type: "input-tag",
+      attrs: { clearable: true },
+{% endif %}{% elif c.query_type_name == "BETWEEN" %}{% if c.form_type_name in ("DATE", "DATE_TIME") %}      type: "date-picker",
+      initialValue: [],
       attrs: {
-        type: "daterange",
+{% if c.form_type_name == "DATE_TIME" %}        type: "datetimerange",
+        valueFormat: "YYYY-MM-DD HH:mm:ss",
+        startPlaceholder: "开始时间",
+        endPlaceholder: "结束时间",
+{% else %}        type: "daterange",
         valueFormat: "YYYY-MM-DD",
         startPlaceholder: "开始日期",
         endPlaceholder: "结束日期",
-      },
+{% endif %}      },
+{% else %}      type: "custom",
+      initialValue: [null, null],
+{% endif %}{% elif c.dict_type %}      type: "custom",
+      attrs: { clearable: true },
+{% elif c.form_type_name in ("DATE", "DATE_TIME") %}      type: "date-picker",
+{% if c.form_type_name == "DATE_TIME" %}      attrs: { type: "datetime", valueFormat: "YYYY-MM-DD HH:mm:ss", clearable: true },
 {% else %}      attrs: { type: "date", valueFormat: "YYYY-MM-DD", clearable: true },
-{% endif %}{% elif c.form_type_name == "INPUT_NUMBER" %}      type: "input-number",
+{% endif %}{% elif c.ts_type == "number" %}      type: "input-number",
       attrs: { clearable: true },
 {% else %}      type: "input",
       attrs: { clearable: true },
@@ -990,6 +1021,7 @@ const formConfig: CrudFormConfig<[[ entity_name ]]Form> = {
       options: [],
 {% else %}      type: "input",
 {% if c.form_type_name == "TEXT_AREA" %}      attrs: { type: "textarea", rows: 3 },
+{% elif "password" in c.field_name or "pwd" in c.field_name %}      attrs: { type: "password", showPassword: true },
 {% endif %}{% endif %}    },
 {% endif %}{% endfor %}  ],
 };
@@ -1011,10 +1043,23 @@ const JS_CRUD_VUE_TMPL: &str = r#"<template>
     :form-config="formConfig"
     :load-form-data="loadFormData"
   >
-{% for c in columns %}{% if c.is_show_in_query and c.dict_type %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
+{% for c in columns %}{% if c.is_show_in_query %}{% if c.query_type_name == "IN" %}{% if c.dict_type %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
+      <DictSelect v-model="formData[prop]" type="checkbox" code="[[ c.dict_type ]]" v-bind="attrs" />
+    </template>
+{% endif %}{% elif c.query_type_name == "BETWEEN" and c.form_type_name not in ("DATE", "DATE_TIME") %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
+      <div class="flex w-full items-center gap-2" v-bind="attrs">
+{% if c.ts_type == "number" %}        <el-input-number v-model="formData[prop][0]" placeholder="最小值" class="flex-1" />
+        <span class="text-[var(--el-text-color-placeholder)]">~</span>
+        <el-input-number v-model="formData[prop][1]" placeholder="最大值" class="flex-1" />
+{% else %}        <el-input v-model="formData[prop][0]" placeholder="开始值" clearable class="flex-1" />
+        <span class="text-[var(--el-text-color-placeholder)]">~</span>
+        <el-input v-model="formData[prop][1]" placeholder="结束值" clearable class="flex-1" />
+{% endif %}      </div>
+    </template>
+{% elif c.dict_type %}    <template #search-[[ c.field_name ]]="{ formData, prop, attrs }">
       <DictSelect v-model="formData[prop]" code="[[ c.dict_type ]]" v-bind="attrs" />
     </template>
-{% endif %}{% endfor %}{% for c in columns %}{% if c.is_show_in_list and c.dict_type %}    <template #table-cell-[[ c.field_name ]]="{ row }">
+{% endif %}{% endif %}{% endfor %}{% for c in columns %}{% if c.is_show_in_list and c.dict_type %}    <template #table-cell-[[ c.field_name ]]="{ row }">
       <DictTag :model-value="row.[[ c.field_name ]]" code="[[ c.dict_type ]]" />
     </template>
 {% endif %}{% endfor %}{% for c in columns %}{% if c.is_show_in_form and c.form_type_name != "HIDDEN" and c.dict_type %}    <template #form-[[ c.field_name ]]="{ formData, prop, attrs }">
@@ -1033,18 +1078,31 @@ const searchConfig = {
 {% for c in columns %}{% if c.is_show_in_query %}    {
       prop: "[[ c.field_name ]]",
       label: "[[ c.field_comment ]]",
-{% if c.dict_type %}      type: "custom",
+{% if c.query_type_name == "IN" %}{% if c.dict_type %}      type: "custom",
+      initialValue: [],
       attrs: { clearable: true },
-{% elif c.form_type_name == "DATE" or c.form_type_name == "DATE_TIME" %}      type: "date-picker",
-{% if c.query_type_name == "BETWEEN" %}      initialValue: [],
+{% else %}      type: "input-tag",
+      attrs: { clearable: true },
+{% endif %}{% elif c.query_type_name == "BETWEEN" %}{% if c.form_type_name in ("DATE", "DATE_TIME") %}      type: "date-picker",
+      initialValue: [],
       attrs: {
-        type: "daterange",
+{% if c.form_type_name == "DATE_TIME" %}        type: "datetimerange",
+        valueFormat: "YYYY-MM-DD HH:mm:ss",
+        startPlaceholder: "开始时间",
+        endPlaceholder: "结束时间",
+{% else %}        type: "daterange",
         valueFormat: "YYYY-MM-DD",
         startPlaceholder: "开始日期",
         endPlaceholder: "结束日期",
-      },
+{% endif %}      },
+{% else %}      type: "custom",
+      initialValue: [null, null],
+{% endif %}{% elif c.dict_type %}      type: "custom",
+      attrs: { clearable: true },
+{% elif c.form_type_name in ("DATE", "DATE_TIME") %}      type: "date-picker",
+{% if c.form_type_name == "DATE_TIME" %}      attrs: { type: "datetime", valueFormat: "YYYY-MM-DD HH:mm:ss", clearable: true },
 {% else %}      attrs: { type: "date", valueFormat: "YYYY-MM-DD", clearable: true },
-{% endif %}{% elif c.form_type_name == "INPUT_NUMBER" %}      type: "input-number",
+{% endif %}{% elif c.ts_type == "number" %}      type: "input-number",
       attrs: { clearable: true },
 {% else %}      type: "input",
       attrs: { clearable: true },
@@ -1112,6 +1170,7 @@ const formConfig = {
       options: [],
 {% else %}      type: "input",
 {% if c.form_type_name == "TEXT_AREA" %}      attrs: { type: "textarea", rows: 3 },
+{% elif "password" in c.field_name or "pwd" in c.field_name %}      attrs: { type: "password", showPassword: true },
 {% endif %}{% endif %}    },
 {% endif %}{% endfor %}  ],
 };
