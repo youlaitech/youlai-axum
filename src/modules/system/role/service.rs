@@ -149,6 +149,30 @@ impl<'a> RoleService<'a> {
             .split(',')
             .filter_map(|s| s.trim().parse().ok())
             .collect();
+        if ids.is_empty() {
+            return Err(AppError::Business(
+                ResultCode::UserRequestParameterError,
+                None,
+            ));
+        }
+        // 已分配用户的角色不允许删除
+        for id in &ids {
+            let assigned = entity::sys_user_role::Entity::find()
+                .filter(entity::sys_user_role::Column::RoleId.eq(*id))
+                .count(self.db)
+                .await?;
+            if assigned > 0 {
+                let name = entity::sys_role::Entity::find_by_id(*id)
+                    .one(self.db)
+                    .await?
+                    .map(|role| role.name)
+                    .unwrap_or_default();
+                return Err(AppError::Business(
+                    ResultCode::AccessPermissionException,
+                    Some(format!("角色【{name}】已分配用户，请先解除关联后删除")),
+                ));
+            }
+        }
         // 逻辑删除角色
         let r = entity::sys_role::Entity::update_many()
             .col_expr(entity::sys_role::Column::IsDeleted, Expr::value(1))
