@@ -49,6 +49,7 @@ pub struct NoticeVO {
     pub target_user_ids: Option<String>,
     pub publish_status: i16,
     pub publisher_id: Option<i64>,
+    pub publisher_name: Option<String>,
     pub publish_time: Option<String>,
     pub revoke_time: Option<String>,
     pub create_time: Option<String>,

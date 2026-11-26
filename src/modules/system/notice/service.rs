@@ -44,6 +44,26 @@ impl<'a> NoticeService<'a> {
         ))
     }
 
+    /// 管理端预览通知，不修改阅读状态
+    pub async fn get_preview(&self, id: i64) -> AppResult<NoticeVO> {
+        let notice = entity::sys_notice::Entity::find_by_id(id)
+            .filter(entity::sys_notice::Column::IsDeleted.eq(0))
+            .one(self.db)
+            .await?
+            .ok_or_else(|| AppError::Business(ResultCode::DataNotFound, Some("通知不存在".into())))?;
+        let mut vo = self.to_vo(&notice);
+        if let Some(publisher_id) = notice.publisher_id {
+            vo.publisher_name = entity::sys_user::Entity::find_by_id(publisher_id)
+                .select_only()
+                .column(entity::sys_user::Column::Nickname)
+                .into_tuple()
+                .one(self.db)
+                .await?
+                .and_then(|(nickname,)| nickname);
+        }
+        Ok(vo)
+    }
+
     /// 获取通知表单
     pub async fn get_form(&self, id: i64) -> AppResult<NoticeVO> {
         let r = entity::sys_notice::Entity::find_by_id(id)
@@ -65,6 +85,7 @@ impl<'a> NoticeService<'a> {
             target_user_ids: r.target_user_ids.clone(),
             publish_status: r.publish_status,
             publisher_id: r.publisher_id,
+            publisher_name: None,
             publish_time: r
                 .publish_time
                 .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),

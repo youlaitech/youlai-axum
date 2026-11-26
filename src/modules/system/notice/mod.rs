@@ -31,6 +31,11 @@ pub fn routes() -> Router<AppState> {
         .route("/api/v1/notices/read-all", put(read_all))
         .route("/api/v1/notices/{id}/detail", get(get_notice_detail))
         .route(
+            "/api/v1/notices/{id}/preview",
+            get(get_notice_preview)
+                .route_layer(middleware::from_fn(require_perm("sys:notice:list"))),
+        )
+        .route(
             "/api/v1/notices/{id}/form",
             get(get_notice_form)
                 .route_layer(middleware::from_fn(require_perm("sys:notice:update"))),
@@ -124,6 +129,16 @@ async fn get_notice_detail(
     }
     Ok(Json(Result::success(
         NoticeService::new(db).get_form(id).await?,
+    )))
+}
+
+/// 管理端预览通知，不修改当前用户的阅读状态
+async fn get_notice_preview(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> AppResult<Json<Result<NoticeVO>>> {
+    Ok(Json(Result::success(
+        NoticeService::new(&state.db).get_preview(id).await?,
     )))
 }
 
