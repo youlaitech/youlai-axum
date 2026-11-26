@@ -20,7 +20,7 @@ use crate::modules::auth::service::AuthService;
 use crate::response::Result;
 use crate::state::AppState;
 use axum::{
-    extract::State,
+    extract::{Query, State},
     routing::{delete, get, post},
     Json, Router,
 };
@@ -75,7 +75,7 @@ async fn login_by_sms(
 
 async fn send_sms_code(
     State(state): State<AppState>,
-    Json(req): Json<SendSmsRequest>,
+    Query(req): Query<SendSmsRequest>,
 ) -> AppResult<Json<Result<()>>> {
     AuthService::new(&state.db, &state.redis, &state.token_manager)
         .send_sms_code(&req)
