@@ -225,7 +225,7 @@ async fn list_user_options(
 /// 发送手机绑定验证码
 async fn send_mobile_code(
     State(state): State<AppState>,
-    Json(form): Json<MobileCodeForm>,
+    Query(form): Query<MobileCodeForm>,
 ) -> AppResult<Json<Result<()>>> {
     UserService::new(&state.db)
         .send_mobile_code(&state.redis, &form.mobile)
@@ -248,11 +248,12 @@ async fn bind_mobile(
 /// 解绑手机号
 async fn unbind_mobile(
     State(state): State<AppState>,
-    req: axum::http::Request<axum::body::Body>,
+    AuthUser(user): AuthUser,
+    Json(form): Json<PasswordVerifyForm>,
 ) -> AppResult<Json<Result<()>>> {
-    let user = extract_user(req.extensions())?;
+    form.validate()?;
     UserService::new(&state.db)
-        .unbind_mobile(user.user_id)
+        .unbind_mobile(user.user_id, &form.password)
         .await?;
     Ok(Json(Result::success_empty()))
 }
@@ -260,7 +261,7 @@ async fn unbind_mobile(
 /// 发送邮箱绑定验证码
 async fn send_email_code(
     State(state): State<AppState>,
-    Json(form): Json<EmailCodeForm>,
+    Query(form): Query<EmailCodeForm>,
 ) -> AppResult<Json<Result<()>>> {
     UserService::new(&state.db)
         .send_email_code(&state.redis, &state.settings.mail, &form.email)
@@ -283,11 +284,12 @@ async fn bind_email(
 /// 解绑邮箱
 async fn unbind_email(
     State(state): State<AppState>,
-    req: axum::http::Request<axum::body::Body>,
+    AuthUser(user): AuthUser,
+    Json(form): Json<PasswordVerifyForm>,
 ) -> AppResult<Json<Result<()>>> {
-    let user = extract_user(req.extensions())?;
+    form.validate()?;
     UserService::new(&state.db)
-        .unbind_email(user.user_id)
+        .unbind_email(user.user_id, &form.password)
         .await?;
     Ok(Json(Result::success_empty()))
 }

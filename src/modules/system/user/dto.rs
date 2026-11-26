@@ -100,6 +100,13 @@ pub struct EmailCodeForm {
     pub email: String,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+#[serde(rename_all = "camelCase")]
+pub struct PasswordVerifyForm {
+    #[validate(length(min = 1))]
+    pub password: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[allow(dead_code)]

@@ -408,8 +408,10 @@ impl<'a> UserService<'a> {
         Ok(())
     }
 
-    /// 解绑手机号
-    pub async fn unbind_mobile(&self, user_id: i64) -> AppResult<()> {
+    /// 解绑手机号，校验当前登录密码
+    pub async fn unbind_mobile(&self, user_id: i64, password: &str) -> AppResult<()> {
+        self.verify_password_if_present(user_id, Some(password))
+            .await?;
         entity::sys_user::Entity::update_many()
             .col_expr(entity::sys_user::Column::Mobile, Expr::value(""))
             .filter(entity::sys_user::Column::Id.eq(user_id))
@@ -471,8 +473,10 @@ impl<'a> UserService<'a> {
         Ok(())
     }
 
-    /// 解绑邮箱
-    pub async fn unbind_email(&self, user_id: i64) -> AppResult<()> {
+    /// 解绑邮箱，校验当前登录密码
+    pub async fn unbind_email(&self, user_id: i64, password: &str) -> AppResult<()> {
+        self.verify_password_if_present(user_id, Some(password))
+            .await?;
         entity::sys_user::Entity::update_many()
             .col_expr(entity::sys_user::Column::Email, Expr::value(""))
             .filter(entity::sys_user::Column::Id.eq(user_id))
